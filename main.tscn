@@ -1,0 +1,103 @@
+[gd_scene load_steps=14 format=3 uid="uid://cl55grv86e3kn"]
+
+[ext_resource type="Script" uid="uid://cdjdds01pwge4" path="res://main.gd" id="1_1bvp3"]
+[ext_resource type="Script" uid="uid://rjix0jpaqbnk" path="res://planet.gd" id="2_h2yge"]
+[ext_resource type="Texture2D" uid="uid://c4jshq7x0hbj1" path="res://ESO_-_Milky_Way.jpg" id="4_1bvp3"]
+[ext_resource type="PackedScene" uid="uid://ulb35ejyx51q" path="res://player.tscn" id="5_lquwl"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_0xm2m"]
+shading_mode = 0
+albedo_color = Color(1, 0.364706, 0.0941176, 1)
+
+[sub_resource type="SphereMesh" id="SphereMesh_h2yge"]
+material = SubResource("StandardMaterial3D_0xm2m")
+radius = 50.0
+height = 100.0
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_1bvp3"]
+radius = 50.0
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_h2yge"]
+
+[sub_resource type="SphereMesh" id="SphereMesh_1bvp3"]
+material = SubResource("StandardMaterial3D_h2yge")
+radius = 20.0
+height = 40.0
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_lquwl"]
+radius = 20.0
+
+[sub_resource type="PanoramaSkyMaterial" id="PanoramaSkyMaterial_lquwl"]
+panorama = ExtResource("4_1bvp3")
+energy_multiplier = 0.08
+
+[sub_resource type="Sky" id="Sky_7mycd"]
+sky_material = SubResource("PanoramaSkyMaterial_lquwl")
+
+[sub_resource type="Environment" id="Environment_ig7tw"]
+resource_local_to_scene = true
+background_mode = 2
+sky = SubResource("Sky_7mycd")
+ambient_light_source = 1
+reflected_light_source = 1
+glow_enabled = true
+glow_intensity = 1.16
+glow_strength = 0.76
+glow_bloom = 0.48
+
+[node name="Main" type="Node3D"]
+script = ExtResource("1_1bvp3")
+
+[node name="Sun" type="StaticBody3D" parent="."]
+script = ExtResource("2_h2yge")
+surface_radius = 50.0
+_surface_gravity = 20.0
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Sun"]
+mesh = SubResource("SphereMesh_h2yge")
+
+[node name="OmniLight3D" type="OmniLight3D" parent="Sun"]
+light_energy = 0.247
+omni_range = 1000.0
+omni_attenuation = 0.061
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Sun"]
+shape = SubResource("SphereShape3D_1bvp3")
+
+[node name="Planet1" type="StaticBody3D" parent="." node_paths=PackedStringArray("_orbital_parent")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 244.606)
+script = ExtResource("2_h2yge")
+_orbital_parent = NodePath("../Sun")
+_orbital_radius = 350.0
+_orbital_angle = 180.0
+surface_radius = 20.0
+_day_length = 60.0
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Planet1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.361847)
+mesh = SubResource("SphereMesh_1bvp3")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Planet1"]
+shape = SubResource("SphereShape3D_lquwl")
+
+[node name="Planet2" type="StaticBody3D" parent="." node_paths=PackedStringArray("_orbital_parent")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -236.832, 0, 512.531)
+script = ExtResource("2_h2yge")
+_orbital_parent = NodePath("../Sun")
+_orbital_radius = 500.0
+_orbital_angle = 200.0
+surface_radius = 20.0
+_day_length = 120.0
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Planet2"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.361847)
+mesh = SubResource("SphereMesh_1bvp3")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Planet2"]
+shape = SubResource("SphereShape3D_lquwl")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_ig7tw")
+
+[node name="Player" parent="." instance=ExtResource("5_lquwl")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -157.311, 0, 119.385)

@@ -1,0 +1,33 @@
+[gd_scene load_steps=4 format=3 uid="uid://ulb35ejyx51q"]
+
+[ext_resource type="Script" uid="uid://hojw17htvbrh" path="res://player.gd" id="1_4flbx"]
+
+[sub_resource type="CapsuleMesh" id="CapsuleMesh_onrkg"]
+
+[sub_resource type="CylinderShape3D" id="CylinderShape3D_i3pqv"]
+
+[node name="Player" type="RigidBody3D" node_paths=PackedStringArray("_camera", "_camera_pivot", "_ground_cast")]
+script = ExtResource("1_4flbx")
+_camera = NodePath("CameraPivot/Camera3D")
+_camera_pivot = NodePath("CameraPivot")
+_ground_cast = NodePath("GroundCast")
+_thrust = 10.0
+_auto_orient_speed = 2.0
+_jump_impulse = 10.0
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+mesh = SubResource("CapsuleMesh_onrkg")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("CylinderShape3D_i3pqv")
+
+[node name="CameraPivot" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.629755, 0)
+
+[node name="Camera3D" type="Camera3D" parent="CameraPivot"]
+
+[node name="SpotLight3D" type="SpotLight3D" parent="CameraPivot"]
+spot_range = 50.0
+
+[node name="GroundCast" type="RayCast3D" parent="."]
+target_position = Vector3(0, -1.4, 0)
