@@ -135,9 +135,16 @@ func _process_auto_orientation(delta: float) -> void:
 
 
 func _input(e: InputEvent) -> void:
-	if e is InputEventMouseMotion:
+	if e is InputEventMouseMotion and Input.get_mouse_mode() == Input.MOUSE_MODE_CAPTURED:
 		var mm: InputEventMouseMotion = e
 		_mouse_delta += mm.relative
+	
+	# enable mouse visibility so user can interact with UI
+	if e.is_action_pressed("ui_cancel"):
+		if Input.get_mouse_mode() != Input.MOUSE_MODE_VISIBLE:
+			Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+		else:
+			Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 
 
 func show_map(in_map: bool) -> void:

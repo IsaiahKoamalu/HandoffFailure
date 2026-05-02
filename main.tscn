@@ -101,3 +101,12 @@ environment = SubResource("Environment_ig7tw")
 
 [node name="Player" parent="." instance=ExtResource("5_lquwl")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -157.311, 0, 119.385)
+
+[node name="button_quit" type="Button" parent="."]
+offset_top = 1.0
+offset_right = 87.0
+offset_bottom = 53.0
+theme_override_font_sizes/font_size = 30
+text = "Exit"
+
+[connection signal="pressed" from="button_quit" to="." method="_on_button_quit_pressed"]

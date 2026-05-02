@@ -21,3 +21,8 @@ func _ready() -> void:
 	# Initialize in parent-first order
 	for planet in Planets:
 		planet.init()
+		
+
+# Button to exit the sim
+func _on_button_quit_pressed() -> void:
+	get_tree().quit()
