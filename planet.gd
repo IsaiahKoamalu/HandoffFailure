@@ -56,7 +56,8 @@ func get_orbital_velocity(world_pos: Vector3) -> Vector3:
 
 # Orbital period around the parent at _orbital_radius
 func get_orbital_period() -> float:
-	return 2.0 * PI * sqrt(pow(_orbital_radius, 3) / _orbital_parent.standard_gravitational_parameter)
+	var orbital_period = 2.0 * PI * sqrt(pow(_orbital_radius, 3) / _orbital_parent.standard_gravitational_parameter)
+	return orbital_period
 
 
 # Linear velocity relative to this planet’s surface at a given position/velocity

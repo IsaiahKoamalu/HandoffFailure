@@ -93,6 +93,10 @@ func _process_movement_inputs(_delta: float) -> void:
 
 	if _is_grounded() and Input.is_action_just_released("jump"):
 		apply_central_impulse(_jump_impulse * up)
+	$Label_LinX.text = "Linear Velocity X: " + str(snapped(linear_velocity.x, 0.01))
+	$Label_LinY.text = "Linear Velocity Y: " + str(snapped(linear_velocity.y, 0.01))
+	$Label_LinZ.text = "Linear Velocity Z: " + str(snapped(linear_velocity.z, 0.01))
+	
 
 
 func _process_look_inputs(_delta: float) -> void:
