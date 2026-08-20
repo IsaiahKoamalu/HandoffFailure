@@ -1,0 +1,38 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://astronaut.gd" id="1_astro"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_astro"]
+albedo_color = Color(0.85, 0.85, 0.9, 1)
+
+[sub_resource type="CapsuleMesh" id="CapsuleMesh_astro"]
+material = SubResource("StandardMaterial3D_astro")
+radius = 0.35
+height = 1.8
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_astro"]
+radius = 0.35
+height = 1.8
+
+[node name="Astronaut" type="CharacterBody3D" node_paths=PackedStringArray("_camera", "_camera_pivot")]
+floor_snap_length = 0.5
+platform_on_leave = 2
+platform_floor_layers = 0
+platform_wall_layers = 0
+script = ExtResource("1_astro")
+_camera = NodePath("CameraPivot/Camera3D")
+_camera_pivot = NodePath("CameraPivot")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+mesh = SubResource("CapsuleMesh_astro")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("CapsuleShape3D_astro")
+
+[node name="CameraPivot" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.7, 0)
+
+[node name="Camera3D" type="Camera3D" parent="CameraPivot"]
+
+[node name="SpotLight3D" type="SpotLight3D" parent="CameraPivot"]
+spot_range = 50.0

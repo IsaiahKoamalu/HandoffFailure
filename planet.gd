@@ -4,7 +4,8 @@ class_name Planet
 @export_category("Orbit")
 @export var _orbital_parent: Planet
 @export var _orbital_radius: float = 0.0
-@export var _orbital_angle: float = 0.0
+## Starting angle of the orbit, in degrees.
+@export_range(0.0, 360.0, 0.1, "or_greater", "or_less") var _orbital_angle: float = 0.0
 
 @export_category("Gravity")
 @export var surface_radius: float = 1.0
@@ -27,7 +28,7 @@ func _ready() -> void:
 func init() -> void:
 	if _orbital_parent != null:
 		global_position = _orbital_parent.global_position \
-			+ (Vector3.FORWARD * _orbital_radius).rotated(Vector3.UP, _orbital_angle)
+			+ (Vector3.FORWARD * _orbital_radius).rotated(Vector3.UP, deg_to_rad(_orbital_angle))
 		constant_linear_velocity = _orbital_parent.constant_linear_velocity \
 			+ _orbital_parent.get_orbital_velocity(global_position)
 
@@ -56,15 +57,20 @@ func get_orbital_velocity(world_pos: Vector3) -> Vector3:
 
 # Orbital period around the parent at _orbital_radius
 func get_orbital_period() -> float:
-	var orbital_period = 2.0 * PI * sqrt(pow(_orbital_radius, 3) / _orbital_parent.standard_gravitational_parameter)
-	return orbital_period
+	if _orbital_parent == null:
+		return 0.0
+	return 2.0 * PI * sqrt(pow(_orbital_radius, 3) / _orbital_parent.standard_gravitational_parameter)
+
+
+# World-space velocity of this planet’s surface at a given point,
+# i.e. orbital motion plus the spin of the surface underneath that point.
+func get_surface_velocity(world_pos: Vector3) -> Vector3:
+	return constant_linear_velocity + constant_angular_velocity.cross(world_pos - global_position)
 
 
 # Linear velocity relative to this planet’s surface at a given position/velocity
 func get_relative_velocity_to_surface(world_pos: Vector3, linear_velocity: Vector3) -> Vector3:
-	var planet_speed := constant_linear_velocity
-	var rotational_speed := constant_angular_velocity.cross(world_pos - global_position)
-	return linear_velocity - (planet_speed + rotational_speed)
+	return linear_velocity - get_surface_velocity(world_pos)
 
 
 func _physics_process(delta: float) -> void:
