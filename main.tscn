@@ -5,7 +5,7 @@
 [ext_resource type="Texture2D" uid="uid://c4jshq7x0hbj1" path="res://ESO_-_Milky_Way.jpg" id="4_1bvp3"]
 [ext_resource type="PackedScene" path="res://ship.tscn" id="5_ship"]
 [ext_resource type="PackedScene" path="res://astronaut.tscn" id="6_astro"]
-[ext_resource type="Script" path="res://hud.gd" id="7_hud"]
+[ext_resource type="Script" uid="uid://itno6mhiwwrj" path="res://hud.gd" id="7_hud"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_0xm2m"]
 shading_mode = 0
@@ -123,15 +123,19 @@ shape = SubResource("SphereShape3D_lquwl")
 [node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=739584564]
 environment = SubResource("Environment_ig7tw")
 
-[node name="Ship" parent="." node_paths=PackedStringArray("_astronaut") instance=ExtResource("5_ship")]
+[node name="Ship" parent="." unique_id=1219419865 node_paths=PackedStringArray("_astronaut") instance=ExtResource("5_ship")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -157.311, 0, 119.385)
 _astronaut = NodePath("../Astronaut")
 
-[node name="Astronaut" parent="." node_paths=PackedStringArray("_ship") instance=ExtResource("6_astro")]
+[node name="Astronaut" parent="." unique_id=1979015555 node_paths=PackedStringArray("_ship") instance=ExtResource("6_astro")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -157.311, 0, 119.385)
 _ship = NodePath("../Ship")
 
-[node name="HUD" type="CanvasLayer" parent="." node_paths=PackedStringArray("_ship", "_astronaut", "_label_mode", "_label_lin_x", "_label_lin_y", "_label_lin_z", "_label_hint")]
+[node name="Astronaut2" parent="." unique_id=1409644851 node_paths=PackedStringArray("_ship") instance=ExtResource("6_astro")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -157.311, 0, 119.385)
+_ship = NodePath("../Ship")
+
+[node name="HUD" type="CanvasLayer" parent="." unique_id=779721893 node_paths=PackedStringArray("_ship", "_astronaut", "_label_mode", "_label_lin_x", "_label_lin_y", "_label_lin_z", "_label_hint")]
 script = ExtResource("7_hud")
 _ship = NodePath("../Ship")
 _astronaut = NodePath("../Astronaut")
@@ -141,38 +145,38 @@ _label_lin_y = NodePath("Label_LinY")
 _label_lin_z = NodePath("Label_LinZ")
 _label_hint = NodePath("Label_Hint")
 
-[node name="Label_Mode" type="Label" parent="HUD"]
+[node name="Label_Mode" type="Label" parent="HUD" unique_id=1763899695]
 offset_left = 6.0
 offset_top = 60.0
 offset_right = 320.0
 offset_bottom = 82.0
 
-[node name="Label_LinX" type="Label" parent="HUD"]
+[node name="Label_LinX" type="Label" parent="HUD" unique_id=179047098]
 offset_left = 6.0
 offset_top = 84.0
 offset_right = 320.0
 offset_bottom = 106.0
 
-[node name="Label_LinY" type="Label" parent="HUD"]
+[node name="Label_LinY" type="Label" parent="HUD" unique_id=952717279]
 offset_left = 6.0
 offset_top = 106.0
 offset_right = 320.0
 offset_bottom = 128.0
 
-[node name="Label_LinZ" type="Label" parent="HUD"]
+[node name="Label_LinZ" type="Label" parent="HUD" unique_id=652125039]
 offset_left = 6.0
 offset_top = 128.0
 offset_right = 320.0
 offset_bottom = 150.0
 
-[node name="Label_Hint" type="Label" parent="HUD"]
+[node name="Label_Hint" type="Label" parent="HUD" unique_id=274033778]
 offset_left = 6.0
 offset_top = 164.0
 offset_right = 400.0
 offset_bottom = 192.0
 theme_override_font_sizes/font_size = 20
 
-[node name="button_quit" type="Button" parent="HUD"]
+[node name="button_quit" type="Button" parent="HUD" unique_id=1598352427]
 offset_left = 3.0
 offset_top = 1.0
 offset_right = 90.0

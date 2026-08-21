@@ -1,4 +1,4 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://astronaut.gd" id="1_astro"]
 
@@ -10,11 +10,15 @@ material = SubResource("StandardMaterial3D_astro")
 radius = 0.35
 height = 1.8
 
+[sub_resource type="SphereShape3D" id="SphereShape3D_probe"]
+radius = 0.6
+
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_astro"]
 radius = 0.35
 height = 1.8
 
-[node name="Astronaut" type="CharacterBody3D" node_paths=PackedStringArray("_camera", "_camera_pivot")]
+[node name="Astronaut" type="CharacterBody3D" node_paths=PackedStringArray("_camera", "_camera_pivot", "_interact_probe")]
+floor_max_angle = 0.8726646
 floor_snap_length = 0.5
 platform_on_leave = 2
 platform_floor_layers = 0
@@ -22,6 +26,7 @@ platform_wall_layers = 0
 script = ExtResource("1_astro")
 _camera = NodePath("CameraPivot/Camera3D")
 _camera_pivot = NodePath("CameraPivot")
+_interact_probe = NodePath("InteractProbe")
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="."]
 mesh = SubResource("CapsuleMesh_astro")
@@ -36,3 +41,11 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.7, 0)
 
 [node name="SpotLight3D" type="SpotLight3D" parent="CameraPivot"]
 spot_range = 50.0
+
+[node name="InteractProbe" type="Area3D" parent="."]
+collision_layer = 0
+collision_mask = 4
+monitorable = false
+
+[node name="Shape" type="CollisionShape3D" parent="InteractProbe"]
+shape = SubResource("SphereShape3D_probe")
