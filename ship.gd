@@ -61,6 +61,13 @@ func _ready() -> void:
 	_ramp_degrees = _ramp_closed_degrees
 	_ramp.rotation.x = deg_to_rad(_ramp_degrees)
 	set_piloted(true)
+	_register_terrain.call_deferred()
+
+
+# SolarSystem.Instance is assigned in Main's _ready, which Godot runs after its
+# children's, so this cannot be called directly from _ready.
+func _register_terrain() -> void:
+	SolarSystem.Instance.register_terrain_client(self)
 
 
 func _physics_process(delta: float) -> void:

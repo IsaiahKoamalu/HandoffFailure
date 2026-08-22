@@ -38,6 +38,11 @@ var is_active: bool = false
 ## The body this astronaut is parented to and moving relative to: a Planet, the
 ## Ship, or null when adrift in open space.
 var _frame_body: Node3D = null
+## Up axis and gravity for the current frame. Resolved once per tick in
+## `_update_frame_field` because every consumer wants both and the open-space
+## case costs a full pass over the planet list.
+var _up: Vector3 = Vector3.UP
+var _gravity: Vector3 = Vector3.ZERO
 var _mouse_delta: Vector2 = Vector2.ZERO
 var _camera_x_rotation: float = 0.0
 
@@ -46,26 +51,32 @@ var _camera_x_rotation: float = 0.0
 
 func _ready() -> void:
 	set_active(false)
+	_register_terrain.call_deferred()
+
+
+# SolarSystem.Instance is assigned in Main's _ready, which Godot runs after its
+# children's, so this cannot be called directly from _ready.
+func _register_terrain() -> void:
+	SolarSystem.Instance.register_terrain_client(self)
 
 
 func _physics_process(delta: float) -> void:
 	_update_frame(_pick_frame())
-
-	var up := _get_up_direction()
-	up_direction = up
+	_update_frame_field()
+	up_direction = _up
 
 	if is_active:
 		_process_look_inputs()
-	_align_to_up(up, delta)
+	_align_to_up(_up, delta)
 
 	if is_on_floor():
 		# On the ground the astronaut fully controls its frame-relative
 		# velocity, so releasing the keys means riding the frame exactly.
-		velocity = _get_walk_velocity(up)
+		velocity = _get_walk_velocity(_up)
 		if is_active and Input.is_action_just_pressed("jump"):
-			velocity += up * _jump_speed
+			velocity += _up * _jump_speed
 	else:
-		velocity += _get_gravity() * delta
+		velocity += _gravity * delta
 
 	move_and_slide()
 	_mouse_delta = Vector2.ZERO
@@ -150,23 +161,27 @@ func _frame_velocity_at(frame: Node3D) -> Vector3:
 	return Vector3.ZERO
 
 
+# Resolve `_up` and `_gravity` together for the current frame.
+#
 # Inside a planet's frame only that planet's gravity is felt: the frame is
 # itself in free fall, so the parent's orbital acceleration cancels out.
-func _get_gravity() -> Vector3:
+func _update_frame_field() -> void:
 	if _frame_body is Ship:
-		return -_get_up_direction() * _cabin_gravity
-	if _frame_body is Planet:
-		return (_frame_body as Planet).get_acceleration_at_position(global_position)
-	return SolarSystem.Instance.get_acceleration_at_position(global_position)
+		_up = _frame_body.global_basis.y
+		_gravity = -_up * _cabin_gravity
+		return
 
-
-func _get_up_direction() -> Vector3:
-	if _frame_body is Ship:
-		return _frame_body.global_basis.y
 	if _frame_body is Planet:
-		return (global_position - _frame_body.global_position).normalized()
-	var gravity := SolarSystem.Instance.get_acceleration_at_position(global_position)
-	return -gravity.normalized() if gravity != Vector3.ZERO else global_basis.y
+		# Gravity here is just -up scaled by GM/d^2, so deriving it from `_up`
+		# saves normalizing the same offset twice.
+		var planet := _frame_body as Planet
+		var offset := global_position - planet.global_position
+		_up = offset.normalized()
+		_gravity = -_up * planet.standard_gravitational_parameter / offset.length_squared()
+		return
+
+	_gravity = SolarSystem.Instance.get_acceleration_at_position(global_position)
+	_up = -_gravity.normalized() if _gravity != Vector3.ZERO else global_basis.y
 
 
 # --- Movement ---------------------------------------------------------------

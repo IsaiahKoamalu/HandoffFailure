@@ -1,11 +1,11 @@
-[gd_scene format=3 uid="uid://cl55grv86e3kn"]
+[gd_scene load_steps=16 format=3 uid="uid://cl55grv86e3kn"]
 
 [ext_resource type="Script" uid="uid://cdjdds01pwge4" path="res://main.gd" id="1_1bvp3"]
 [ext_resource type="Script" uid="uid://rjix0jpaqbnk" path="res://planet.gd" id="2_h2yge"]
 [ext_resource type="Texture2D" uid="uid://c4jshq7x0hbj1" path="res://ESO_-_Milky_Way.jpg" id="4_1bvp3"]
 [ext_resource type="PackedScene" path="res://ship.tscn" id="5_ship"]
 [ext_resource type="PackedScene" path="res://astronaut.tscn" id="6_astro"]
-[ext_resource type="Script" uid="uid://itno6mhiwwrj" path="res://hud.gd" id="7_hud"]
+[ext_resource type="Script" path="res://hud.gd" id="7_hud"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_0xm2m"]
 shading_mode = 0
@@ -47,26 +47,26 @@ glow_intensity = 1.16
 glow_strength = 0.76
 glow_bloom = 0.48
 
-[node name="Main" type="Node3D" unique_id=1802881025]
+[node name="Main" type="Node3D"]
 script = ExtResource("1_1bvp3")
 
-[node name="Sun" type="StaticBody3D" parent="." unique_id=1527769153]
+[node name="Sun" type="StaticBody3D" parent="."]
 script = ExtResource("2_h2yge")
 surface_radius = 50.0
 _surface_gravity = 20.0
 
-[node name="MeshInstance3D" type="MeshInstance3D" parent="Sun" unique_id=1629758673]
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Sun"]
 mesh = SubResource("SphereMesh_h2yge")
 
-[node name="OmniLight3D" type="OmniLight3D" parent="Sun" unique_id=919435825]
+[node name="OmniLight3D" type="OmniLight3D" parent="Sun"]
 light_energy = 0.247
 omni_range = 1000.0
 omni_attenuation = 0.061
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="Sun" unique_id=1039704098]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Sun"]
 shape = SubResource("SphereShape3D_1bvp3")
 
-[node name="Planet1" type="StaticBody3D" parent="." unique_id=1910490779 node_paths=PackedStringArray("_orbital_parent")]
+[node name="Planet1" type="StaticBody3D" parent="." node_paths=PackedStringArray("_orbital_parent")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 244.606)
 script = ExtResource("2_h2yge")
 _orbital_parent = NodePath("../Sun")
@@ -74,21 +74,23 @@ _orbital_radius = 350.0
 _orbital_angle = 180.0
 surface_radius = 20.0
 _day_length = 60.0
+terrain_enabled = true
+terrain_amplitude = 0.08
+terrain_seed = 7
 
-[node name="MeshInstance3D" type="MeshInstance3D" parent="Planet1" unique_id=142374891]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.361847)
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Planet1"]
 mesh = SubResource("SphereMesh_1bvp3")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="Planet1" unique_id=230609623]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Planet1"]
 shape = SubResource("SphereShape3D_lquwl")
 
-[node name="Label_P1OrbitalPeriod" type="Label" parent="Planet1" unique_id=2069878761]
+[node name="Label_P1OrbitalPeriod" type="Label" parent="Planet1"]
 offset_left = 106.0
 offset_top = 6.0
 offset_right = 166.0
 offset_bottom = 40.0
 
-[node name="Planet2" type="StaticBody3D" parent="." unique_id=2106784332 node_paths=PackedStringArray("_orbital_parent")]
+[node name="Planet2" type="StaticBody3D" parent="." node_paths=PackedStringArray("_orbital_parent")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -236.832, 0, 512.531)
 script = ExtResource("2_h2yge")
 _orbital_parent = NodePath("../Sun")
@@ -96,46 +98,52 @@ _orbital_radius = 500.0
 _orbital_angle = 200.0
 surface_radius = 20.0
 _day_length = 120.0
+terrain_enabled = true
+terrain_amplitude = 0.08
+terrain_seed = 21
 
-[node name="MeshInstance3D" type="MeshInstance3D" parent="Planet2" unique_id=797468835]
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Planet2"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.361847)
 mesh = SubResource("SphereMesh_1bvp3")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="Planet2" unique_id=2018704515]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Planet2"]
 shape = SubResource("SphereShape3D_lquwl")
 
-[node name="Planet3" type="StaticBody3D" parent="." unique_id=2031106127 node_paths=PackedStringArray("_orbital_parent")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -131.84015, 0, -80.15146)
+[node name="Planet3" type="StaticBody3D" parent="." node_paths=PackedStringArray("_orbital_parent")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -131.84, 0, -80.1515)
 script = ExtResource("2_h2yge")
 _orbital_parent = NodePath("../Sun")
 _orbital_radius = 500.0
 _orbital_angle = 200.0
 surface_radius = 20.0
 _day_length = 120.0
+terrain_enabled = true
+terrain_amplitude = 0.08
+terrain_seed = 43
 
-[node name="MeshInstance3D" type="MeshInstance3D" parent="Planet3" unique_id=219785989]
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Planet3"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.361847)
 mesh = SubResource("SphereMesh_1bvp3")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="Planet3" unique_id=1806796931]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Planet3"]
 shape = SubResource("SphereShape3D_lquwl")
 
-[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=739584564]
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_ig7tw")
 
-[node name="Ship" parent="." unique_id=1219419865 node_paths=PackedStringArray("_astronaut") instance=ExtResource("5_ship")]
+[node name="Ship" parent="." node_paths=PackedStringArray("_astronaut") instance=ExtResource("5_ship")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -157.311, 0, 119.385)
 _astronaut = NodePath("../Astronaut")
 
-[node name="Astronaut" parent="." unique_id=1979015555 node_paths=PackedStringArray("_ship") instance=ExtResource("6_astro")]
+[node name="Astronaut" parent="." node_paths=PackedStringArray("_ship") instance=ExtResource("6_astro")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -157.311, 0, 119.385)
 _ship = NodePath("../Ship")
 
-[node name="Astronaut2" parent="." unique_id=1409644851 node_paths=PackedStringArray("_ship") instance=ExtResource("6_astro")]
+[node name="Astronaut2" parent="." node_paths=PackedStringArray("_ship") instance=ExtResource("6_astro")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -157.311, 0, 119.385)
 _ship = NodePath("../Ship")
 
-[node name="HUD" type="CanvasLayer" parent="." unique_id=779721893 node_paths=PackedStringArray("_ship", "_astronaut", "_label_mode", "_label_lin_x", "_label_lin_y", "_label_lin_z", "_label_hint")]
+[node name="HUD" type="CanvasLayer" parent="." node_paths=PackedStringArray("_ship", "_astronaut", "_label_mode", "_label_lin_x", "_label_lin_y", "_label_lin_z", "_label_hint")]
 script = ExtResource("7_hud")
 _ship = NodePath("../Ship")
 _astronaut = NodePath("../Astronaut")
@@ -145,38 +153,38 @@ _label_lin_y = NodePath("Label_LinY")
 _label_lin_z = NodePath("Label_LinZ")
 _label_hint = NodePath("Label_Hint")
 
-[node name="Label_Mode" type="Label" parent="HUD" unique_id=1763899695]
+[node name="Label_Mode" type="Label" parent="HUD"]
 offset_left = 6.0
 offset_top = 60.0
 offset_right = 320.0
 offset_bottom = 82.0
 
-[node name="Label_LinX" type="Label" parent="HUD" unique_id=179047098]
+[node name="Label_LinX" type="Label" parent="HUD"]
 offset_left = 6.0
 offset_top = 84.0
 offset_right = 320.0
 offset_bottom = 106.0
 
-[node name="Label_LinY" type="Label" parent="HUD" unique_id=952717279]
+[node name="Label_LinY" type="Label" parent="HUD"]
 offset_left = 6.0
 offset_top = 106.0
 offset_right = 320.0
 offset_bottom = 128.0
 
-[node name="Label_LinZ" type="Label" parent="HUD" unique_id=652125039]
+[node name="Label_LinZ" type="Label" parent="HUD"]
 offset_left = 6.0
 offset_top = 128.0
 offset_right = 320.0
 offset_bottom = 150.0
 
-[node name="Label_Hint" type="Label" parent="HUD" unique_id=274033778]
+[node name="Label_Hint" type="Label" parent="HUD"]
 offset_left = 6.0
 offset_top = 164.0
 offset_right = 400.0
 offset_bottom = 192.0
 theme_override_font_sizes/font_size = 20
 
-[node name="button_quit" type="Button" parent="HUD" unique_id=1598352427]
+[node name="button_quit" type="Button" parent="HUD"]
 offset_left = 3.0
 offset_top = 1.0
 offset_right = 90.0
