@@ -22,6 +22,8 @@ class_name Astronaut
 @export var _camera_pivot: Node3D
 @export var _ship: Ship
 @export var _interact_probe: Area3D
+## Helmet lamp. Lives under the camera pivot, so it lights whatever you look at.
+@export var _headlamp: SpotLight3D
 
 @export_category("Settings")
 @export var _mouse_sensitivity: float = 0.3
@@ -33,7 +35,19 @@ class_name Astronaut
 ## is parked on a planet or under thrust in deep space.
 @export var _cabin_gravity: float = 9.81
 
+@export_category("Swimming")
+## Upward acceleration underwater as a multiple of local gravity. Above 1.0 and
+## the astronaut drifts toward the surface; below 1.0 they sink to the seabed.
+@export var _buoyancy: float = 1.08
+@export var _swim_speed: float = 3.0
+## How hard water pulls velocity toward the swim input. Higher is stickier, and
+## also sets the terminal rise rate against buoyancy.
+@export var _water_drag: float = 2.5
+
 var is_active: bool = false
+var is_lamp_on: bool = true
+## Below sea level on the planet currently being ridden.
+var is_submerged: bool = false
 
 ## The body this astronaut is parented to and moving relative to: a Planet, the
 ## Ship, or null when adrift in open space.
@@ -69,7 +83,9 @@ func _physics_process(delta: float) -> void:
 		_process_look_inputs()
 	_align_to_up(_up, delta)
 
-	if is_on_floor():
+	if is_submerged:
+		_process_swimming(delta)
+	elif is_on_floor():
 		# On the ground the astronaut fully controls its frame-relative
 		# velocity, so releasing the keys means riding the frame exactly.
 		velocity = _get_walk_velocity(_up)
@@ -83,7 +99,15 @@ func _physics_process(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not is_active or not event.is_action_pressed("interact"):
+	if not is_active:
+		return
+
+	if event.is_action_pressed("toggle_light"):
+		get_viewport().set_input_as_handled()
+		toggle_lamp()
+		return
+
+	if not event.is_action_pressed("interact"):
 		return
 	var target := get_interactable()
 	if target == null:
@@ -118,6 +142,13 @@ func get_interactable() -> Interactable:
 			best = candidate
 			best_distance = distance
 	return best
+
+
+## Switch the helmet lamp. Bound to the toggle_light action rather than an
+## Interactable: it is carried, not walked up to.
+func toggle_lamp() -> void:
+	is_lamp_on = not is_lamp_on
+	_headlamp.visible = is_lamp_on
 
 
 func get_interaction_prompt() -> String:
@@ -169,6 +200,7 @@ func _update_frame_field() -> void:
 	if _frame_body is Ship:
 		_up = _frame_body.global_basis.y
 		_gravity = -_up * _cabin_gravity
+		is_submerged = false
 		return
 
 	if _frame_body is Planet:
@@ -178,13 +210,54 @@ func _update_frame_field() -> void:
 		var offset := global_position - planet.global_position
 		_up = offset.normalized()
 		_gravity = -_up * planet.standard_gravitational_parameter / offset.length_squared()
+		is_submerged = planet.is_underwater(global_position)
 		return
 
 	_gravity = SolarSystem.Instance.get_acceleration_at_position(global_position)
 	_up = -_gravity.normalized() if _gravity != Vector3.ZERO else global_basis.y
+	is_submerged = false
 
 
 # --- Movement ---------------------------------------------------------------
+
+# Underwater the astronaut is neutrally buoyant rather than in free fall, and
+# drag replaces the ground contact that normally gives full control of velocity.
+func _process_swimming(delta: float) -> void:
+	# Buoyancy opposes gravity, so only the remainder is felt.
+	velocity += _gravity * (1.0 - _buoyancy) * delta
+
+	# Drag pulls velocity toward the swim input, which both stops the astronaut
+	# coasting forever and caps the buoyant rise at a terminal speed.
+	velocity = velocity.lerp(_get_swim_velocity(), clampf(_water_drag * delta, 0.0, 1.0))
+
+
+## Swim input in world space. Unlike walking this is deliberately not flattened
+## onto the tangent plane: underwater you go where you are looking.
+func _get_swim_velocity() -> Vector3:
+	if not is_active:
+		return Vector3.ZERO
+
+	var forward: Vector3 = -_camera.global_transform.basis.z
+	var right: Vector3 = _camera.global_transform.basis.x
+
+	var wish := Vector3.ZERO
+	if Input.is_action_pressed("move_forward"):
+		wish += forward
+	if Input.is_action_pressed("move_backward"):
+		wish -= forward
+	if Input.is_action_pressed("move_right"):
+		wish += right
+	if Input.is_action_pressed("move_left"):
+		wish -= right
+	if Input.is_action_pressed("move_up"):
+		wish += _up
+	if Input.is_action_pressed("move_down"):
+		wish -= _up
+
+	if wish.is_zero_approx():
+		return Vector3.ZERO
+	return wish.normalized() * _swim_speed
+
 
 func _get_walk_velocity(up: Vector3) -> Vector3:
 	if not is_active:
@@ -239,6 +312,10 @@ func place_at(spawn: Transform3D) -> void:
 	global_transform = spawn
 	_frame_body = null
 	_update_frame(_pick_frame())
+	# Patch streaming is asynchronous, so a fresh spawn would otherwise spend a
+	# frame or two with no ground under it and drop through to the backstop.
+	if _frame_body is Planet:
+		(_frame_body as Planet).build_collision_now(self, global_position)
 	velocity = Vector3.ZERO
 	_camera_x_rotation = 0.0
 	_camera_pivot.rotation = Vector3.ZERO

@@ -17,6 +17,12 @@ class_name Ship
 ## Hinge node for the rear ramp; rotated about its local X axis.
 @export var _ramp: AnimatableBody3D
 @export var _cockpit: Interactable
+@export var _cockpit_light_switch: Interactable
+## Forward headlight. Lives under the camera pivot, so it points where you look.
+@export var _headlight: SpotLight3D
+
+@export_category("Cabin Light Switch")
+@export var _cabin_light: OmniLight3D
 
 @export_category("Cabin")
 ## Walkable volume in ship-local space, used to decide when the astronaut is
@@ -34,6 +40,18 @@ class_name Ship
 ## Distance from the hinge to the lip, used to probe for ground.
 @export var _ramp_length: float = 3.2
 
+@export_category("Water")
+## Upward force underwater as a multiple of local gravity. Above 1.0 the ship
+## surfaces; below 1.0 it settles onto the seabed.
+@export var _buoyancy: float = 1.15
+## Linear damping applied while submerged, so water actually feels thick.
+@export var _water_drag: float = 3.0
+## Depth at which the hull counts as fully under and buoyancy reaches full
+## strength. Buoyancy ramps up over this distance rather than switching on at
+## the waterline, which is what gives the ship a stable float instead of
+## launching it out of the sea and bouncing.
+@export var _hull_depth: float = 2.0
+
 @export_category("Settings")
 @export var _mouse_sensitivity: float = 0.3
 ## Thrust as an acceleration, so handling does not change with the ship's mass.
@@ -46,6 +64,10 @@ class_name Ship
 var closest_force: Vector3 = Vector3.ZERO
 var is_piloted: bool = false
 var is_ramp_open: bool = false
+var is_cabin_switch: bool = true
+var is_headlight_on: bool = true
+## Below sea level on the dominant planet.
+var is_submerged: bool = false
 
 var _surface_position: Vector3 = Vector3.ZERO
 var _is_parked: bool = false
@@ -79,6 +101,8 @@ func _physics_process(delta: float) -> void:
 	if dominant != null:
 		closest_force = dominant.get_acceleration_at_position(global_position) * mass
 
+	_process_buoyancy(dominant)
+
 	var movement := _get_movement_input() if is_piloted else Vector3.ZERO
 	if is_piloted:
 		_process_look_inputs()
@@ -103,6 +127,44 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("toggle_ramp"):
 		get_viewport().set_input_as_handled()
 		toggle_ramp()
+	elif event.is_action_pressed("toggle_light"):
+		get_viewport().set_input_as_handled()
+		toggle_headlight()
+
+
+# --- Water ------------------------------------------------------------------
+
+# The ocean has no collision shape, so there is nothing to splash against: the
+# ship flies straight in and buoyancy plus damping take over from there.
+func _process_buoyancy(dominant: Planet) -> void:
+	if dominant == null:
+		is_submerged = false
+		return
+
+	# Scale buoyancy by how much of the hull is under, rather than switching it
+	# on at the waterline. A binary test has no equilibrium: full buoyancy
+	# throws the ship clear of the sea, gravity drops it back, and it never
+	# settles. Ramped, it comes to rest where buoyancy cancels gravity, which
+	# is a float.
+	var fraction: float = clampf(dominant.get_depth_at(global_position) / _hull_depth, 0.0, 1.0)
+	is_submerged = fraction > 0.0
+	if not is_submerged:
+		return
+
+	# closest_force already points down toward the planet, so negating it gives
+	# the upward push. No mass factor — it is already a force.
+	apply_central_force(-closest_force * _buoyancy * fraction)
+
+	# Drag acts on velocity relative to the WATER, which rides the planet's
+	# orbit and spin. Godot's linear_damp damps toward world-stationary, so on
+	# an orbiting planet it drags the ship sideways at orbital speed — the same
+	# double-count the astronaut avoids by being reparented. The ship lives in
+	# world space, so it has to subtract the surface velocity by hand.
+	#
+	# Not ramped by `fraction`: buoyancy needs the ramp to have an equilibrium,
+	# but damping is what settles the ship into it.
+	var drift: Vector3 = linear_velocity - dominant.get_surface_velocity(global_position)
+	apply_central_force(-drift * _water_drag * mass)
 
 
 # --- Cabin ------------------------------------------------------------------
@@ -121,11 +183,23 @@ func get_surface_velocity(world_pos: Vector3) -> Vector3:
 	return linear_velocity + angular_velocity.cross(world_pos - global_position)
 
 
+#--- Turbo ---------------------
+
+func toggle_cabin_light_switch() -> void:
+	is_cabin_switch = not is_cabin_switch
+	_cabin_light.visible = is_cabin_switch
+
+
+## Forward headlight, bound to the toggle_light action. The cabin light is an
+## Interactable because you walk to the switch; this one is a cockpit control.
+func toggle_headlight() -> void:
+	is_headlight_on = not is_headlight_on
+	_headlight.visible = is_headlight_on
+
 # --- Ramp -------------------------------------------------------------------
 
 func toggle_ramp() -> void:
 	is_ramp_open = not is_ramp_open
-
 
 func _process_ramp(delta: float) -> void:
 	# A ramp lowered to a fixed angle only meets the ground on a flat world. These
@@ -181,6 +255,7 @@ func _on_ramp_control_activated(_who: Node3D) -> void:
 	toggle_ramp()
 
 
+
 # --- Movement ---------------------------------------------------------------
 
 func _get_movement_input() -> Vector3:
@@ -209,9 +284,13 @@ func _get_movement_input() -> Vector3:
 # A parked ship is pinned to surface-local coordinates so it rides the planet's
 # orbit and spin instead of drifting away while the astronaut is outside.
 func _process_parking(movement: Vector3) -> void:
+	# Never park while afloat. Parking pins the ship to a fixed surface-local
+	# point, so buoyancy would keep accumulating velocity against a frozen
+	# position and then release it all at once when the ship un-parks.
 	var ground: Planet = get_ground()
 	var should_park: bool = (movement == Vector3.ZERO) \
 		and (ground != null) \
+		and (not is_submerged) \
 		and (ground.get_relative_velocity_to_surface(global_position, linear_velocity).length() < _landing_speed)
 
 	if should_park:
@@ -279,3 +358,7 @@ func is_grounded() -> bool:
 
 func get_ground() -> Planet:
 	return _ground_cast.get_collider() as Planet
+
+
+func _on_light_switch_cabin_activated(_who: Node3D) -> void:
+	toggle_cabin_light_switch()

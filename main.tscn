@@ -3,7 +3,7 @@
 [ext_resource type="Script" uid="uid://cdjdds01pwge4" path="res://main.gd" id="1_1bvp3"]
 [ext_resource type="Script" uid="uid://rjix0jpaqbnk" path="res://planet.gd" id="2_h2yge"]
 [ext_resource type="Texture2D" uid="uid://c4jshq7x0hbj1" path="res://ESO_-_Milky_Way.jpg" id="4_1bvp3"]
-[ext_resource type="PackedScene" path="res://ship.tscn" id="5_ship"]
+[ext_resource type="PackedScene" uid="uid://bf7vn77fyd3ra" path="res://ship.tscn" id="5_ship"]
 [ext_resource type="PackedScene" path="res://astronaut.tscn" id="6_astro"]
 [ext_resource type="Script" uid="uid://itno6mhiwwrj" path="res://hud.gd" id="7_hud"]
 
@@ -13,11 +13,11 @@ albedo_color = Color(1, 0.364706, 0.0941176, 1)
 
 [sub_resource type="SphereMesh" id="SphereMesh_h2yge"]
 material = SubResource("StandardMaterial3D_0xm2m")
-radius = 50.0
-height = 100.0
+radius = 200.0
+height = 400.0
 
 [sub_resource type="SphereShape3D" id="SphereShape3D_1bvp3"]
-radius = 50.0
+radius = 200.0
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_h2yge"]
 
@@ -52,7 +52,7 @@ script = ExtResource("1_1bvp3")
 
 [node name="Sun" type="StaticBody3D" parent="." unique_id=192334374]
 script = ExtResource("2_h2yge")
-surface_radius = 50.0
+surface_radius = 200.0
 _surface_gravity = 20.0
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="Sun" unique_id=235963821]
@@ -60,7 +60,7 @@ mesh = SubResource("SphereMesh_h2yge")
 
 [node name="OmniLight3D" type="OmniLight3D" parent="Sun" unique_id=1121851015]
 light_energy = 0.247
-omni_range = 1000.0
+omni_range = 5000.0
 omni_attenuation = 0.061
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Sun" unique_id=2018360347]
@@ -70,13 +70,27 @@ shape = SubResource("SphereShape3D_1bvp3")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 244.606)
 script = ExtResource("2_h2yge")
 _orbital_parent = NodePath("../Sun")
-_orbital_radius = 350.0
+_orbital_radius = 1200.0
 _orbital_angle = 180.0
-surface_radius = 20.0
-_day_length = 60.0
+surface_radius = 180.0
+_day_length = 180.0
 terrain_enabled = true
-terrain_amplitude = 0.08
+terrain_amplitude = 0.06
 terrain_seed = 7
+ocean_depth = 0.55
+mesh_resolution = 160
+sea_level_bias = 0.08
+detail_weight = 0.45
+ridge_weight = 0.55
+continent_frequency = 1.1
+patch_extent = 30.0
+color_deep = Color(0.04, 0.12, 0.26, 1)
+color_shallow = Color(0.13, 0.38, 0.52, 1)
+color_shore = Color(0.72, 0.68, 0.5, 1)
+color_low = Color(0.24, 0.42, 0.22, 1)
+color_high = Color(0.4, 0.33, 0.24, 1)
+color_peak = Color(0.92, 0.93, 0.95, 1)
+water_color = Color(0.06, 0.28, 0.45, 0.72)
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="Planet1" unique_id=703310355]
 mesh = SubResource("SphereMesh_1bvp3")
@@ -94,13 +108,28 @@ offset_bottom = 40.0
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -236.832, 0, 512.531)
 script = ExtResource("2_h2yge")
 _orbital_parent = NodePath("../Sun")
-_orbital_radius = 500.0
+_orbital_radius = 2400.0
 _orbital_angle = 200.0
-surface_radius = 50.0
-_day_length = 120.0
+surface_radius = 260.0
+_day_length = 300.0
 terrain_enabled = true
-terrain_amplitude = 0.6
+terrain_amplitude = 0.1
 terrain_seed = 21
+mesh_resolution = 160
+sea_level_bias = 0.26
+ocean_depth = 0.35
+detail_weight = 0.25
+ridge_weight = 1.1
+continent_frequency = 0.8
+detail_frequency = 3.4
+patch_extent = 30.0
+color_deep = Color(0.1, 0.15, 0.16, 1)
+color_shallow = Color(0.2, 0.32, 0.32, 1)
+color_shore = Color(0.6, 0.45, 0.31, 1)
+color_low = Color(0.52, 0.32, 0.2, 1)
+color_high = Color(0.44, 0.26, 0.2, 1)
+color_peak = Color(0.82, 0.8, 0.78, 1)
+water_color = Color(0.12, 0.3, 0.3, 0.7)
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="Planet2" unique_id=631325146]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.361847)
@@ -110,16 +139,31 @@ mesh = SubResource("SphereMesh_1bvp3")
 shape = SubResource("SphereShape3D_lquwl")
 
 [node name="Planet3" type="StaticBody3D" parent="." unique_id=1882624608 node_paths=PackedStringArray("_orbital_parent")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -649.519, 0, -375.000)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -649.519, 0, -375)
 script = ExtResource("2_h2yge")
 _orbital_parent = NodePath("../Sun")
-_orbital_radius = 750.0
+_orbital_radius = 3600.0
 _orbital_angle = 60.0
-surface_radius = 20.0
+surface_radius = 140.0
 _day_length = 120.0
 terrain_enabled = true
-terrain_amplitude = 0.08
+terrain_amplitude = 0.05
 terrain_seed = 43
+ocean_depth = 0.9
+mesh_resolution = 160
+sea_level_bias = -0.12
+detail_weight = 0.5
+ridge_weight = 0.4
+continent_frequency = 2.2
+detail_frequency = 5.0
+patch_extent = 30.0
+color_deep = Color(0.03, 0.16, 0.24, 1)
+color_shallow = Color(0.13, 0.52, 0.55, 1)
+color_shore = Color(0.87, 0.83, 0.63, 1)
+color_low = Color(0.25, 0.5, 0.26, 1)
+color_high = Color(0.3, 0.4, 0.24, 1)
+color_peak = Color(0.66, 0.66, 0.6, 1)
+water_color = Color(0.05, 0.42, 0.5, 0.68)
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="Planet3" unique_id=1524999546]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.361847)
@@ -132,15 +176,11 @@ shape = SubResource("SphereShape3D_lquwl")
 environment = SubResource("Environment_ig7tw")
 
 [node name="Ship" parent="." unique_id=2122797206 node_paths=PackedStringArray("_astronaut") instance=ExtResource("5_ship")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -40.335464, 0, 547.87)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1000)
 _astronaut = NodePath("../Astronaut")
 
 [node name="Astronaut" parent="." unique_id=1118900575 node_paths=PackedStringArray("_ship") instance=ExtResource("6_astro")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -40.335464, 0, 547.87)
-_ship = NodePath("../Ship")
-
-[node name="Astronaut2" parent="." unique_id=596124923 node_paths=PackedStringArray("_ship") instance=ExtResource("6_astro")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -40.335464, 0, 547.87)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1000)
 _ship = NodePath("../Ship")
 
 [node name="HUD" type="CanvasLayer" parent="." unique_id=419332938 node_paths=PackedStringArray("_ship", "_astronaut", "_label_mode", "_label_lin_x", "_label_lin_y", "_label_lin_z", "_label_hint")]

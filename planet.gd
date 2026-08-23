@@ -39,11 +39,38 @@ class_name Planet
 @export var detail_frequency: float = 4.0
 ## Raise to flood the planet, lower to dry it out.
 @export_range(-0.5, 0.5, 0.01) var sea_level_bias: float = 0.15
+## Weight of the rolling fBm layer. Raise for broad, soft relief.
+@export_range(0.0, 1.5, 0.01) var detail_weight: float = 0.35
+## Weight of the ridged layer. Raise for sharp alpine ranges, drop for hills.
+@export_range(0.0, 1.5, 0.01) var ridge_weight: float = 0.85
+
+@export_category("Appearance")
+## Hypsometric ramp, deepest seabed to highest peak. The single biggest lever
+## on how distinct one planet looks from another.
+@export var color_deep: Color = Color(0.06, 0.13, 0.24)
+@export var color_shallow: Color = Color(0.16, 0.35, 0.46)
+@export var color_shore: Color = Color(0.64, 0.58, 0.42)
+@export var color_low: Color = Color(0.28, 0.38, 0.23)
+@export var color_high: Color = Color(0.42, 0.33, 0.25)
+@export var color_peak: Color = Color(0.88, 0.89, 0.90)
+
+@export_category("Ocean")
+@export var water_enabled: bool = true
+## How far basins are carved below sea level, as a fraction of
+## terrain_amplitude. Zero leaves seabeds flat at sea level, which makes the
+## ocean surface z-fight with them.
+@export_range(0.0, 1.0, 0.01) var ocean_depth: float = 0.35
+## The ocean is a smooth sphere, so this can stay low until you add waves.
+@export_range(4, 128, 1) var water_resolution: int = 32
+@export var water_color: Color = Color(0.05, 0.25, 0.45, 0.75)
 
 @export_category("Terrain collision")
-## Angular half-width of the streamed collision patch, in radians. Expressing
-## it as an angle rather than a distance means it scales with the planet.
-@export_range(0.05, 1.0, 0.01) var patch_half_angle: float = 0.35
+## Half-width of the streamed collision patch, in world units. You need a fixed
+## amount of ground underfoot regardless of how big the planet is, so this is a
+## distance — but on a small body that distance would wrap most of the way
+## round, so it is capped by an angle.
+@export var patch_extent: float = 30.0
+@export_range(0.05, 1.0, 0.01) var patch_max_angle: float = 0.35
 @export_range(4, 128, 1) var patch_resolution: int = 48
 
 var standard_gravitational_parameter: float = 0.0
@@ -51,9 +78,28 @@ var standard_gravitational_parameter: float = 0.0
 var _continents: FastNoiseLite
 var _detail: FastNoiseLite
 var _mountains: FastNoiseLite
-var _terrain_collider: CollisionShape3D
-## Centre of the live collision patch, as a planet-local direction.
-var _patch_centre: Vector3 = Vector3.ZERO
+## Built off-thread by generate_terrain_mesh, attached by apply_terrain.
+var _built_mesh: ArrayMesh = null
+## One streamed patch per terrain client, keyed by the client node.
+##
+## Deliberately not a single shared patch: two clients standing apart on the
+## same planet — a parked ship and an astronaut who has walked off — would each
+## recentre it every frame, so both spend alternate frames with no ground under
+## them and fall through the world.
+var _patches: Dictionary = {}
+
+
+## One client's streamed collision patch and the state of its in-flight build.
+class Patch extends RefCounted:
+	var collider: CollisionShape3D
+	## Centre of the live shape, as a planet-local direction.
+	var centre: Vector3 = Vector3.ZERO
+	var pending_centre: Vector3 = Vector3.ZERO
+	## In-flight build. -1 when idle.
+	var task: int = -1
+	## Written by the worker thread, read by the main thread only after
+	## is_task_completed reports done — that check is the memory barrier.
+	var result: ConcavePolygonShape3D = null
 
 ## Signed orbital rate in rad/s. Negative because the orbit runs in the
 ## direction `get_orbital_velocity` reports, which is clockwise about UP.
@@ -71,8 +117,6 @@ func _ready() -> void:
 
 	# Must run before anything can ask for a height.
 	_setup_noise()
-	if terrain_enabled:
-		_build_terrain()
 
 
 # --- Terrain ----------------------------------------------------------------
@@ -98,16 +142,41 @@ func _setup_noise() -> void:
 	_mountains.fractal_octaves = 4
 
 
+## Generate the render mesh. Pure maths over this planet's own noise — no
+## scene access — so SolarSystem runs every planet's copy concurrently.
+func generate_terrain_mesh() -> void:
+	if terrain_enabled:
+		_built_mesh = PlanetMesh.build(self, mesh_resolution)
+
+
+## Attach what generate_terrain_mesh produced and build the rest. Main thread
+## only: this adds child nodes.
+func apply_terrain() -> void:
+	if not terrain_enabled:
+		return
+	_build_terrain()
+
+
 func _build_terrain() -> void:
+	# Vertex colours carry the terrain, so the mesh needs a material that reads
+	# them. Without this the planet renders in Godot's default white.
+	var mat := StandardMaterial3D.new()
+	mat.vertex_color_use_as_albedo = true
+	mat.roughness = 0.95
+	mat.metallic = 0.0
+
 	for child in get_children():
 		if child is MeshInstance3D:
-			(child as MeshInstance3D).mesh = PlanetMesh.build(self, mesh_resolution)
+			var mi := child as MeshInstance3D
+			mi.mesh = _built_mesh
+			mi.material_override = mat
 
 	# The authored SphereShape3D is deliberately left in place, shrunk just
-	# inside the lowest possible terrain. Because get_terrain_height never
-	# returns less than zero, that sphere can never poke through the surface —
-	# so it works as a sea-level backstop, catching anything that reaches the
-	# planet before a collision patch has been streamed in for it.
+	# inside the lowest possible terrain. Sized against get_min_terrain_height
+	# it can never poke through the surface, so it works as a backstop that
+	# catches anything reaching the planet before a collision patch has been
+	# streamed in for it. Sizing it against surface_radius instead would leave
+	# an invisible sphere floating above every seabed.
 	for child in get_children():
 		if child is CollisionShape3D:
 			var collider := child as CollisionShape3D
@@ -115,17 +184,36 @@ func _build_terrain() -> void:
 				# Duplicate first: the scene shares one SphereShape3D across
 				# every planet, so resizing it in place would resize them all.
 				var sphere: SphereShape3D = collider.shape.duplicate()
-				sphere.radius = surface_radius * 0.995
+				sphere.radius = (surface_radius + get_min_terrain_height()) * 0.995
 				collider.shape = sphere
 
-	_terrain_collider = CollisionShape3D.new()
-	_terrain_collider.name = "TerrainPatch"
-	add_child(_terrain_collider)
+	# Patch colliders are created per client, on demand.
+
+	if water_enabled:
+		_build_water()
+
+
+func _build_water() -> void:
+	var ocean := MeshInstance3D.new()
+	ocean.name = "Ocean"
+	ocean.mesh = PlanetMesh.build(null, water_resolution, surface_radius)
+
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = water_color
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	# Two-sided: with default back-face culling the surface disappears the
+	# moment the camera drops below it.
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.roughness = 0.08
+	mat.metallic = 0.2
+	ocean.material_override = mat
+
+	add_child(ocean)
 
 
 ## Radial offset from `surface_radius` for a planet-LOCAL direction, which must
-## be normalized. Never negative: basins sit flat at the reference radius
-## rather than being carved below it.
+## be normalized. Negative inside basins, which is what gives the ocean
+## somewhere to sit; `get_min_terrain_height` is the floor.
 ##
 ## Pure function of direction and seed, so it is safe to call from any thread
 ## and gives the same planet on every run.
@@ -136,7 +224,9 @@ func get_terrain_height(dir: Vector3) -> float:
 	# Positive is land, negative is basin.
 	var mask: float = _continents.get_noise_3dv(dir) + sea_level_bias
 	if mask <= 0.0:
-		return 0.0
+		# Shelve smoothly from the shoreline down to the deep, so the seabed
+		# does not drop off a cliff the moment it crosses sea level.
+		return -smoothstep(0.0, 0.35, -mask) * ocean_depth * terrain_amplitude * surface_radius
 	mask = minf(mask, 1.0)
 
 	# Ease the coastline in so land does not begin at a cliff edge.
@@ -146,7 +236,7 @@ func get_terrain_height(dir: Vector3) -> float:
 	var ridges: float = _mountains.get_noise_3dv(dir) * 0.5 + 0.5
 
 	# Squaring the ridges keeps foothills low and peaks sharp.
-	var h: float = rolling * 0.35 + ridges * ridges * mask * 0.85
+	var h: float = rolling * detail_weight + ridges * ridges * mask * ridge_weight
 	return h * shore * terrain_amplitude * surface_radius
 
 
@@ -155,25 +245,156 @@ func get_surface_radius_at(dir: Vector3) -> float:
 	return surface_radius + get_terrain_height(dir)
 
 
-## Guarantee real collision exists under a world-space point. Cheap enough to
-## call every tick: it only rebuilds once the point nears the patch edge.
-func update_collision_for(world_pos: Vector3) -> void:
-	if not terrain_enabled or _terrain_collider == null:
+## Angular half-width of a collision patch, in radians.
+func _patch_angle() -> float:
+	return minf(patch_max_angle, patch_extent / surface_radius)
+
+
+## Ceiling on terrain height. Not reached in practice — the layers rarely peak
+## together — so the colour ramp is scaled against a fraction of it.
+func get_max_terrain_height() -> float:
+	if not terrain_enabled:
+		return 0.0
+	return (detail_weight + ridge_weight) * terrain_amplitude * surface_radius
+
+
+## Colour for a given terrain height, used as vertex colour on the mesh.
+func get_terrain_color(h: float) -> Color:
+	if h < 0.0:
+		var deep := absf(get_min_terrain_height())
+		var t := clampf(-h / maxf(deep, 0.0001), 0.0, 1.0)
+		return color_shallow.lerp(color_deep, sqrt(t))
+
+	# Measured peaks land near two thirds of the ceiling, so scale to that or
+	# the snow line never appears.
+	var t2 := clampf(h / maxf(get_max_terrain_height() * 0.66, 0.0001), 0.0, 1.0)
+	if t2 < 0.12:
+		return color_shore.lerp(color_low, t2 / 0.12)
+	if t2 < 0.55:
+		return color_low.lerp(color_high, (t2 - 0.12) / 0.43)
+	return color_high.lerp(color_peak, (t2 - 0.55) / 0.45)
+
+
+## Deepest the seabed can ever go, relative to surface_radius. Always <= 0.
+## The sea-level backstop collider is sized against this.
+func get_min_terrain_height() -> float:
+	if not terrain_enabled:
+		return 0.0
+	return -ocean_depth * terrain_amplitude * surface_radius
+
+
+# --- Ocean ------------------------------------------------------------------
+
+## True when a world-space point is below sea level.
+##
+## The ocean carries no collision shape at all: it is a perfect sphere of known
+## radius, so submersion is one comparison rather than a physics query. That is
+## also what lets the ship fly into the sea instead of bouncing off it.
+func is_underwater(world_pos: Vector3) -> bool:
+	if not (terrain_enabled and water_enabled):
+		return false
+	return global_position.distance_squared_to(world_pos) < surface_radius * surface_radius
+
+
+## Depth below sea level at a world-space point. Negative above the surface.
+func get_depth_at(world_pos: Vector3) -> float:
+	return surface_radius - global_position.distance_to(world_pos)
+
+
+## Guarantee real collision exists under a world-space point for `client`.
+## Cheap enough to call every tick: it only rebuilds once the client nears the
+## edge of its own patch, and the rebuild happens on a worker thread.
+##
+## The old shape stays live until the new one is ready, so there is never a
+## frame without collision under the client.
+func update_collision_for(client: Node3D, world_pos: Vector3) -> void:
+	if not terrain_enabled:
 		return
 
-	# to_local, not a world-space offset: the patch is stored under the
-	# planet's own transform, and terrain spins with the planet.
+	# to_local, not a world-space offset: patches are stored under the planet's
+	# own transform, and terrain spins with the planet.
 	var dir := to_local(world_pos).normalized()
 	if dir.is_zero_approx():
 		return
 
-	# Rebuild once the point has drifted a third of the way to the patch edge.
-	if _patch_centre != Vector3.ZERO and dir.dot(_patch_centre) > cos(patch_half_angle * 0.33):
+	var patch := _patch_for(client)
+	_adopt_finished(patch)
+	if patch.task != -1:
 		return
 
-	_patch_centre = dir
-	_terrain_collider.shape = PlanetMesh.build_patch(
-		self, dir, patch_half_angle, patch_resolution)
+	# Rebuild once the client has drifted a third of the way to the patch edge.
+	if patch.centre != Vector3.ZERO and dir.dot(patch.centre) > cos(_patch_angle() * 0.33):
+		return
+
+	# build_patch reads only this planet's noise and scalars and touches no
+	# scene state, so it is safe to run concurrently.
+	patch.pending_centre = dir
+	patch.task = WorkerThreadPool.add_task(_build_threaded.bind(patch))
+
+
+## Build a client's patch synchronously. Used when something needs ground under
+## it this instant and cannot wait a frame — spawning onto a surface.
+func build_collision_now(client: Node3D, world_pos: Vector3) -> void:
+	if not terrain_enabled:
+		return
+	var dir := to_local(world_pos).normalized()
+	if dir.is_zero_approx():
+		return
+	var patch := _patch_for(client)
+	patch.centre = dir
+	patch.collider.shape = PlanetMesh.build_patch(
+		self, dir, _patch_angle(), patch_resolution)
+
+
+## Drop a client's patch once it is no longer on this planet, so colliders do
+## not accumulate across every body the ship visits.
+func release_client(client: Node3D) -> void:
+	var patch: Patch = _patches.get(client)
+	if patch == null:
+		return
+	if patch.task != -1:
+		WorkerThreadPool.wait_for_task_completion(patch.task)
+	patch.collider.queue_free()
+	_patches.erase(client)
+
+
+func _patch_for(client: Node3D) -> Patch:
+	var patch: Patch = _patches.get(client)
+	if patch != null:
+		return patch
+
+	patch = Patch.new()
+	patch.collider = CollisionShape3D.new()
+	patch.collider.name = "TerrainPatch_" + client.name
+	add_child(patch.collider)
+	_patches[client] = patch
+	return patch
+
+
+func _build_threaded(patch: Patch) -> void:
+	patch.result = PlanetMesh.build_patch(
+		self, patch.pending_centre, _patch_angle(), patch_resolution)
+
+
+func _adopt_finished(patch: Patch) -> void:
+	if patch.task == -1 or not WorkerThreadPool.is_task_completed(patch.task):
+		return
+	# Required even after is_task_completed: it releases the task's resources.
+	WorkerThreadPool.wait_for_task_completion(patch.task)
+	patch.task = -1
+	if patch.result != null:
+		patch.collider.shape = patch.result
+		patch.centre = patch.pending_centre
+		patch.result = null
+
+
+# Never leave a worker running against a freed planet.
+func _exit_tree() -> void:
+	for patch: Patch in _patches.values():
+		if patch.task != -1:
+			WorkerThreadPool.wait_for_task_completion(patch.task)
+			patch.task = -1
+			patch.result = null
 
 
 # Call this after all planets are ready.

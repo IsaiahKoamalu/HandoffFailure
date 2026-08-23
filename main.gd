@@ -17,6 +17,8 @@ var time: float = 0.0
 ## but the ship's _ground_cast and ramp probe raycast against terrain too, and
 ## both fail silently against ground that was never generated.
 var _terrain_clients: Array[Node3D] = []
+## Which planet each client was on last tick, so its patch can be released.
+var _client_planet: Dictionary = {}
 
 func _ready() -> void:
 	Instance = self
@@ -36,6 +38,19 @@ func _ready() -> void:
 	for planet in Planets:
 		planet.init()
 
+	# Planet meshes are pure functions of their own seeds, so build them all at
+	# once instead of one after another. Attaching them touches the scene tree,
+	# so that part stays on the main thread.
+	if Planets.size() > 0:
+		var task := WorkerThreadPool.add_group_task(_generate_planet_mesh, Planets.size())
+		WorkerThreadPool.wait_for_group_task_completion(task)
+	for planet in Planets:
+		planet.apply_terrain()
+
+
+func _generate_planet_mesh(index: int) -> void:
+	Planets[index].generate_terrain_mesh()
+
 
 # Planets are driven from here rather than from their own _physics_process so
 # they always advance in parent-first order: a moon reads its planet's position
@@ -47,8 +62,14 @@ func _physics_process(delta: float) -> void:
 
 	for client in _terrain_clients:
 		var planet := get_dominant_planet(client.global_position)
+		# Hand the old planet's patch back when a client moves on, so colliders
+		# do not pile up on every body the ship has ever visited.
+		var previous: Planet = _client_planet.get(client)
+		if previous != planet and previous != null:
+			previous.release_client(client)
+		_client_planet[client] = planet
 		if planet != null:
-			planet.update_collision_for(client.global_position)
+			planet.update_collision_for(client, client.global_position)
 
 
 ## Ask SolarSystem to keep terrain collision streamed in under this node.
