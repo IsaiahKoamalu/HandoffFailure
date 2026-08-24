@@ -52,6 +52,19 @@ class_name Ship
 ## launching it out of the sea and bouncing.
 @export var _hull_depth: float = 2.0
 
+@export_category("Handling")
+## How quickly the ship catches up to where the mouse has asked it to point.
+## The old code applied mouse movement straight to the transform, so the ship
+## snapped instantly and stopped instantly — 200 kg of mass when you thrust and
+## none at all when you turn. Lower values feel heavier; 30 is close to the old
+## instant behaviour.
+@export_range(0.5, 30.0, 0.1) var _turn_response: float = 7.0
+## Seconds for the engines to spool from idle to full.
+@export_range(0.0, 3.0, 0.05) var _throttle_response: float = 0.3
+## How hard flight assist cancels drift you did not ask for, as a multiple of
+## the ship's mass per second.
+@export_range(0.0, 6.0, 0.1) var _assist_strength: float = 1.6
+
 @export_category("Settings")
 @export var _mouse_sensitivity: float = 0.3
 ## Thrust as an acceleration, so handling does not change with the ship's mass.
@@ -68,6 +81,13 @@ var is_cabin_switch: bool = true
 var is_headlight_on: bool = true
 ## Below sea level on the dominant planet.
 var is_submerged: bool = false
+## Engine spool, 0 to 1. Shown on the HUD.
+var throttle: float = 0.0
+## When on, the ship cancels sideways drift relative to the body it is near.
+var flight_assist: bool = true
+
+## Rotation the mouse has asked for but the ship has not yet made, in degrees.
+var _pending_turn: Vector2 = Vector2.ZERO
 
 var _surface_position: Vector3 = Vector3.ZERO
 var _is_parked: bool = false
@@ -105,12 +125,21 @@ func _physics_process(delta: float) -> void:
 
 	var movement := _get_movement_input() if is_piloted else Vector3.ZERO
 	if is_piloted:
-		_process_look_inputs()
+		_process_look_inputs(delta)
 
 	_process_parking(movement)
 
+	# Engines spool rather than snapping between off and full.
+	var demand := 1.0 if movement != Vector3.ZERO else 0.0
+	if _throttle_response <= 0.0:
+		throttle = demand
+	else:
+		throttle = move_toward(throttle, demand, delta / _throttle_response)
+
 	if movement != Vector3.ZERO:
-		apply_central_force(_thrust * mass * movement.normalized())
+		apply_central_force(_thrust * mass * movement.normalized() * throttle)
+
+	_process_flight_assist(dominant, movement)
 
 	_process_auto_orientation(delta)
 	_process_ramp(delta)
@@ -130,6 +159,37 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("toggle_light"):
 		get_viewport().set_input_as_handled()
 		toggle_headlight()
+	elif event.is_action_pressed("toggle_assist"):
+		get_viewport().set_input_as_handled()
+		toggle_flight_assist()
+
+
+# --- Flight assist -----------------------------------------------------------
+
+## Cancel drift the pilot did not ask for, relative to the body they are near.
+##
+## Deliberately does nothing in deep space: there is no frame to hold station
+## against out there, and killing velocity relative to nothing would just make
+## the ship feel stuck. Near a planet it holds you where you point.
+##
+## This does fight orbital mechanics — with assist on you cannot coast in an
+## orbit, because the assist reads orbital velocity as drift. That is what the
+## toggle is for.
+func _process_flight_assist(dominant: Planet, movement: Vector3) -> void:
+	if not flight_assist or dominant == null or is_submerged or _is_parked:
+		return
+
+	var drift: Vector3 = linear_velocity - dominant.get_surface_velocity(global_position)
+	if movement != Vector3.ZERO:
+		# Leave the axis being thrust along alone; only trim the rest.
+		var wanted := movement.normalized()
+		drift -= wanted * drift.dot(wanted)
+
+	apply_central_force(-drift * _assist_strength * mass)
+
+
+func toggle_flight_assist() -> void:
+	flight_assist = not flight_assist
 
 
 # --- Water ------------------------------------------------------------------
@@ -310,17 +370,27 @@ func _process_parking(movement: Vector3) -> void:
 		_is_parked = false
 
 
-func _process_look_inputs() -> void:
+# Mouse movement is banked as a pending turn rather than applied straight to the
+# transform, and the ship works through that backlog at _turn_response. The
+# result lags the mouse going in and coasts on coming out, which is what gives
+# the rotation any sense of mass. Roll is unchanged: hold `rotate` and steer.
+func _process_look_inputs(delta: float) -> void:
 	var dx: float = _mouse_delta.y * _mouse_sensitivity
 	var dy: float = -_mouse_delta.x * _mouse_sensitivity
 
 	if Input.is_action_pressed("rotate"):
 		rotate(_camera_pivot.global_transform.basis.z, deg_to_rad(dy))
-	else:
-		rotate_object_local(Vector3.UP, deg_to_rad(dy))
-		if _camera_x_rotation + dx > -90.0 and _camera_x_rotation + dx < 90.0:
-			_camera_pivot.rotate_x(deg_to_rad(-dx))
-			_camera_x_rotation += dx
+		return
+
+	_pending_turn += Vector2(dx, dy)
+
+	var caught: Vector2 = _pending_turn * clampf(_turn_response * delta, 0.0, 1.0)
+	_pending_turn -= caught
+
+	rotate_object_local(Vector3.UP, deg_to_rad(caught.y))
+	if absf(_camera_x_rotation + caught.x) < 90.0:
+		_camera_pivot.rotate_x(deg_to_rad(-caught.x))
+		_camera_x_rotation += caught.x
 
 
 func _process_auto_orientation(delta: float) -> void:

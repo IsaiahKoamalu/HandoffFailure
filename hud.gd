@@ -38,7 +38,9 @@ func _process(_delta: float) -> void:
 	else:
 		var ramp := "close" if _ship.is_ramp_open else "open"
 		var beam := "off" if _ship.is_headlight_on else "on"
-		_label_hint.text = "[E] Leave seat    [F] %s ramp    [L] headlight %s" % [ramp, beam]
+		var assist := "on" if _ship.flight_assist else "OFF"
+		_label_hint.text = "[E] Leave seat    [F] %s ramp    [L] headlight %s    [Z] assist %s    thr %3d%%" % [
+			ramp, beam, assist, roundi(_ship.throttle * 100.0)]
 
 
 # --- Navigation -------------------------------------------------------------

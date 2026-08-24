@@ -324,6 +324,9 @@ scale — and it keeps the astronaut's "up" vector well-defined on slopes, which
 | `patch_resolution` | `48` | 4,418 triangles per patch. |
 | `continent_frequency` | `1.1` | Features per planet. |
 | `time_scale` | `1.0` | On `SolarSystem`. Exact at any value. |
+| `_turn_response` | `7.0` | Ship steering lag. 30 ≈ the old instant turn. |
+| `_throttle_response` | `0.3` | Seconds to spool idle → full. |
+| `_assist_strength` | `1.6` | Drift cancellation. Sets the hover sink rate. |
 
 ### Water handling
 
@@ -413,6 +416,38 @@ report closing on a planet you are actually falling behind.
 
 The astronaut's `velocity` is frame-relative, so `get_world_velocity()` adds the
 frame's motion back before any navigation maths.
+
+## Ship handling
+
+The ship is a `RigidBody3D` with **physical translation and kinematic
+rotation** — `_process_auto_orientation` zeroes `angular_velocity` every frame,
+and steering writes straight to the transform. That mismatch is deliberate (it
+keeps landing, parking and auto-levelling simple) but it means rotation has no
+mass of its own, so the weight has to be faked.
+
+`_process_look_inputs` banks mouse movement as `_pending_turn` and works
+through that backlog at `_turn_response` per second. The ship lags the mouse
+going into a turn and coasts coming out. `_turn_response = 30` is close to the
+old instant behaviour; lower is heavier.
+
+`throttle` spools over `_throttle_response` instead of switching between off
+and full. Measured at 0.3 s: 0.06 after one tick, 1.00 at 18 ticks, and
+symmetric on release.
+
+`_process_flight_assist` cancels drift relative to the body you are near,
+leaving the axis you are actively thrusting along alone. It does nothing in
+deep space — there is no frame to hold station against, and killing velocity
+relative to nothing would just feel stuck.
+
+Two things to know about it:
+
+- **It fights orbital mechanics.** With assist on you cannot coast in an orbit,
+  because assist reads orbital velocity as drift. That is what `[Z]` is for.
+- **It is not a hover.** Assist is proportional, so near a planet it settles
+  where assist force balances gravity rather than at zero. At
+  `_assist_strength = 1.6` and 5.5 m/s² of local gravity that equilibrium is a
+  3.4 m/s descent. Raising the strength lowers it proportionally; countering
+  gravity outright would be a different feature.
 
 ## Save and load
 
