@@ -59,9 +59,9 @@ _surface_gravity = 20.0
 mesh = SubResource("SphereMesh_h2yge")
 
 [node name="OmniLight3D" type="OmniLight3D" parent="Sun" unique_id=1121851015]
-light_energy = 0.4
+light_energy = 0.247
 omni_range = 6000.0
-omni_attenuation = 1.5
+omni_attenuation = 0.061
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Sun" unique_id=2018360347]
 shape = SubResource("SphereShape3D_1bvp3")

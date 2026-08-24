@@ -459,11 +459,14 @@ tightest being Planet1↔Planet2 at 1200 against a required 880.
 Two things that scaling breaks and are easy to forget:
 
 - **The sun's `omni_range`** was 1000, which no longer reached past the first
-  orbit. It is now 6000, with `omni_attenuation` raised from 0.061 to 1.5.
-  At 0.061 the falloff was almost perfectly flat — the outermost planet sat at
-  93% of the innermost's brightness — which removed any sense of distance. 1.5
-  is a deliberate compromise short of true inverse square, which would leave
-  Planet3 at about 8% and effectively unplayable.
+  orbit. It is now 6000. `omni_attenuation` stays at 0.061.
+
+  Be careful with that value. In Godot 4 `omni_attenuation` is a **decay
+  exponent applied as `distance^(-decay)`**, not a shaping exponent on a
+  normalised 0–1 falloff. Raising it to 1.5 makes the term `1200^-1.5 ≈ 2.4e-5`
+  at the first orbit, which turns every planet black. Any increase has to come
+  with a very large increase in `light_energy` to match — and the only way to
+  judge the result is to look at it.
 - **Camera `far`** defaults to 4000. With the outer planet at 3600 plus the
   ship's own distance from origin, distant bodies clipped out entirely. Both
   cameras are now `near = 0.1`, `far = 20000`.
