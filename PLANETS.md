@@ -313,6 +313,8 @@ scale — and it keeps the astronaut's "up" vector well-defined on slopes, which
 | `sea_level_bias` | `0.15` | Raise to flood, lower to dry out. `0.15` gives ~31% ocean coverage. |
 | `ocean_depth` | `0.35` | Basin depth as a fraction of `terrain_amplitude`. |
 | `mesh_resolution` | `64` | Triangles = `6*(n-1)^2*2`. 64 → 47k, 128 → 190k, 160 → 303k. |
+| `far_resolution` | `64` | Distant stand-in mesh, ~48k triangles. |
+| `detail_range_factor` | `5.0` | Planet radii at which the stand-in takes over. |
 | `detail_weight` | `0.35` | Rolling fBm weight. |
 | `ridge_weight` | `0.85` | Ridged weight. Raise for alpine. |
 | `patch_extent` | `30.0` | Collision patch half-width, world units. |
@@ -377,6 +379,27 @@ A cube face spans 90° of arc, so spacing is `(π/2)·R / (resolution − 1)`:
 
 ---
 
+## Distance culling
+
+Each planet carries two meshes: the detail mesh at `mesh_resolution`, and a
+stand-in at `far_resolution` (64 by default, ~48k triangles). The detail mesh
+has `visibility_range_end = surface_radius * detail_range_factor`; the stand-in
+has a matching `visibility_range_begin`, so the ranges meet exactly and there is
+never a distance where neither draws.
+
+The default factor of 5 switches at about 23° of angular size. Without this,
+every planet drew its full mesh at all times — a body 59 pixels tall on screen
+cost the same 303k triangles as the one under your feet, about 87 triangles per
+pixel of its screen area.
+
+From the spawn point that takes the standing cost from 910,116 triangles to
+398,628, a 56% saving, for 136 ms more at load (860 → 996 ms).
+
+`visibility_range_fade_mode` is deliberately `DISABLED`, giving a hard switch.
+`FADE_SELF` would cross-fade instead, but Godot applies the fade margin to one
+side of the threshold and choosing the wrong side leaves a band where neither
+mesh draws. It is worth trying with the viewport open; it is not worth guessing.
+
 ## Navigation
 
 `SolarSystem.target` plus `cycle_target()` on **[Tab]**, and
@@ -410,8 +433,9 @@ and both light states all restored, and every planet back where it was.
 
 ## Known limitations
 
-- **No LOD.** One fixed-resolution mesh per planet, 303k triangles, 1.4–2.6
-  units between vertices at radius 140–260.
+- **No near-field LOD.** One fixed-resolution mesh per planet up close, 303k
+  triangles, 1.4–2.6 units between vertices at radius 140–260. There *is*
+  distance culling (see below), but nothing raises detail underfoot.
 
   The gap between the drawn surface and the surface collision follows was
   measured rather than assumed: **mean 0.018–0.024 units, worst case 0.568**,

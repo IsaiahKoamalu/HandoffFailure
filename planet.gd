@@ -33,6 +33,12 @@ class_name Planet
 ## Vertices per cube-face edge. Triangle count is 6*(n-1)^2*2, so this gets
 ## expensive fast: 64 is ~47k triangles, 128 is ~190k.
 @export_range(4, 256, 1) var mesh_resolution: int = 64
+## Resolution of the stand-in mesh used once the planet is far enough away that
+## the detail cannot be resolved.
+@export_range(4, 128, 1) var far_resolution: int = 64
+## The detail mesh is drawn within this many planet radii of the camera; past
+## that the stand-in takes over. At 5 radii a planet subtends about 23 degrees.
+@export_range(2.0, 30.0, 0.5) var detail_range_factor: float = 5.0
 ## Because noise is sampled on the unit sphere, frequency reads as "features
 ## per planet". Around 1.0 gives a handful of continents.
 @export var continent_frequency: float = 1.1
@@ -80,6 +86,7 @@ var _detail: FastNoiseLite
 var _mountains: FastNoiseLite
 ## Built off-thread by generate_terrain_mesh, attached by apply_terrain.
 var _built_mesh: ArrayMesh = null
+var _far_mesh: ArrayMesh = null
 ## One streamed patch per terrain client, keyed by the client node.
 ##
 ## Deliberately not a single shared patch: two clients standing apart on the
@@ -147,6 +154,7 @@ func _setup_noise() -> void:
 func generate_terrain_mesh() -> void:
 	if terrain_enabled:
 		_built_mesh = PlanetMesh.build(self, mesh_resolution)
+		_far_mesh = PlanetMesh.build(self, far_resolution)
 
 
 ## Attach what generate_terrain_mesh produced and build the rest. Main thread
@@ -165,11 +173,22 @@ func _build_terrain() -> void:
 	mat.roughness = 0.95
 	mat.metallic = 0.0
 
+	# Distance culling. Every planet used to draw its full mesh at all times, so
+	# a body 59 pixels tall on screen cost the same 303k triangles as the one
+	# under your feet.
+	var switch_at: float = surface_radius * detail_range_factor
+
 	for child in get_children():
 		if child is MeshInstance3D:
 			var mi := child as MeshInstance3D
 			mi.mesh = _built_mesh
 			mi.material_override = mat
+			# Hard switch, no fade margin. VISIBILITY_RANGE_FADE_SELF would be
+			# smoother, but the margin is applied on one side of the threshold
+			# and getting that side wrong leaves a band where neither mesh
+			# draws. Worth trying with the viewport open; not worth guessing.
+			mi.visibility_range_end = switch_at
+			mi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 
 	# The authored SphereShape3D is deliberately left in place, shrunk just
 	# inside the lowest possible terrain. Sized against get_min_terrain_height
@@ -188,6 +207,14 @@ func _build_terrain() -> void:
 				collider.shape = sphere
 
 	# Patch colliders are created per client, on demand.
+
+	var far := MeshInstance3D.new()
+	far.name = "FarMesh"
+	far.mesh = _far_mesh
+	far.material_override = mat
+	far.visibility_range_begin = switch_at
+	far.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+	add_child(far)
 
 	if water_enabled:
 		_build_water()
