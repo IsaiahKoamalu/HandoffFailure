@@ -58,7 +58,10 @@ class_name Ship
 ## snapped instantly and stopped instantly — 200 kg of mass when you thrust and
 ## none at all when you turn. Lower values feel heavier; 30 is close to the old
 ## instant behaviour.
-@export_range(0.5, 30.0, 0.1) var _turn_response: float = 7.0
+@export_range(0.5, 30.0, 0.1) var _turn_response: float = 18.0
+## Seconds after you stop steering before auto-levelling resumes. Without this
+## the assist fights every input you make.
+@export_range(0.0, 3.0, 0.05) var _level_delay: float = 0.6
 ## Seconds for the engines to spool from idle to full.
 @export_range(0.0, 3.0, 0.05) var _throttle_response: float = 0.3
 ## How hard flight assist cancels drift you did not ask for, as a multiple of
@@ -86,14 +89,19 @@ var throttle: float = 0.0
 ## When on, the ship cancels sideways drift relative to the body it is near.
 var flight_assist: bool = true
 
+var _thrusters: Array[GPUParticles3D] = []
+var _exhaust_glow: OmniLight3D = null
+var _engine_audio: EngineAudio = null
+
 ## Rotation the mouse has asked for but the ship has not yet made, in degrees.
 var _pending_turn: Vector2 = Vector2.ZERO
+## Seconds since the pilot last steered. Auto-levelling waits this out.
+var _since_steer: float = 999.0
 
 var _surface_position: Vector3 = Vector3.ZERO
 var _is_parked: bool = false
 var _ramp_degrees: float = 0.0
 var _mouse_delta: Vector2 = Vector2.ZERO
-var _camera_x_rotation: float = 0.0
 
 
 func _ready() -> void:
@@ -102,6 +110,8 @@ func _ready() -> void:
 	add_collision_exception_with(_ramp)
 	_ramp_degrees = _ramp_closed_degrees
 	_ramp.rotation.x = deg_to_rad(_ramp_degrees)
+	_build_thrusters()
+	_build_engine_audio()
 	set_piloted(true)
 	_register_terrain.call_deferred()
 
@@ -140,6 +150,7 @@ func _physics_process(delta: float) -> void:
 		apply_central_force(_thrust * mass * movement.normalized() * throttle)
 
 	_process_flight_assist(dominant, movement)
+	_process_thrusters(movement)
 
 	_process_auto_orientation(delta)
 	_process_ramp(delta)
@@ -162,6 +173,94 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("toggle_assist"):
 		get_viewport().set_input_as_handled()
 		toggle_flight_assist()
+
+
+# --- Exhaust and engine note -------------------------------------------------
+
+## Main exhaust, built in code so the scene stays free of tuning state.
+##
+## Only the main drive is modelled. RCS jets for each of the six thrust
+## directions would be more honest, but the rear plume is the one you actually
+## look at, and it carries almost all of the feedback.
+func _build_thrusters() -> void:
+	var process := ParticleProcessMaterial.new()
+	process.direction = Vector3(0.0, 0.0, 1.0)
+	process.spread = 7.0
+	process.initial_velocity_min = 14.0
+	process.initial_velocity_max = 24.0
+	process.gravity = Vector3.ZERO
+	process.scale_min = 0.3
+	process.scale_max = 0.7
+	process.damping_min = 8.0
+	process.damping_max = 14.0
+
+	var ramp := Gradient.new()
+	ramp.set_color(0, Color(0.85, 0.93, 1.0, 1.0))
+	ramp.set_color(1, Color(0.18, 0.34, 0.95, 0.0))
+	var ramp_texture := GradientTexture1D.new()
+	ramp_texture.gradient = ramp
+	process.color_ramp = ramp_texture
+
+	var flame := SphereMesh.new()
+	flame.radius = 0.16
+	flame.height = 0.32
+	flame.radial_segments = 6
+	flame.rings = 3
+
+	var flame_material := StandardMaterial3D.new()
+	flame_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	flame_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	flame_material.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	flame_material.vertex_color_use_as_albedo = true
+	flame_material.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	flame.material = flame_material
+
+	for offset in [Vector3(-0.9, 0.15, 2.55), Vector3(0.9, 0.15, 2.55)]:
+		var jet := GPUParticles3D.new()
+		jet.name = "Thruster"
+		jet.position = offset
+		jet.amount = 64
+		jet.lifetime = 0.45
+		jet.process_material = process
+		jet.draw_pass_1 = flame
+		# World coords, so the plume is left behind rather than dragged along.
+		jet.local_coords = false
+		jet.emitting = false
+		add_child(jet)
+		_thrusters.append(jet)
+
+	_exhaust_glow = OmniLight3D.new()
+	_exhaust_glow.name = "ExhaustGlow"
+	_exhaust_glow.position = Vector3(0.0, 0.15, 2.7)
+	_exhaust_glow.light_color = Color(0.5, 0.7, 1.0)
+	_exhaust_glow.omni_range = 8.0
+	_exhaust_glow.light_energy = 0.0
+	add_child(_exhaust_glow)
+
+
+func _build_engine_audio() -> void:
+	_engine_audio = EngineAudio.new()
+	_engine_audio.name = "EngineAudio"
+	_engine_audio.position = Vector3(0.0, 0.2, 2.4)
+	_engine_audio.unit_size = 12.0
+	_engine_audio.max_distance = 220.0
+	_engine_audio._ship = self
+	add_child(_engine_audio)
+
+
+## Drive the plume from the forward component of thrust only, so it does not
+## fire out of the back while the pilot is translating sideways.
+func _process_thrusters(movement: Vector3) -> void:
+	var forward_share := 0.0
+	if movement != Vector3.ZERO:
+		forward_share = clampf(movement.normalized().dot(-global_basis.z), 0.0, 1.0)
+
+	var burn: float = throttle * forward_share
+	for jet in _thrusters:
+		jet.emitting = burn > 0.02
+		jet.amount_ratio = clampf(burn, 0.05, 1.0)
+	if _exhaust_glow != null:
+		_exhaust_glow.light_energy = burn * 2.4
 
 
 # --- Flight assist -----------------------------------------------------------
@@ -383,39 +482,66 @@ func _process_look_inputs(delta: float) -> void:
 		return
 
 	_pending_turn += Vector2(dx, dy)
+	if not _mouse_delta.is_zero_approx():
+		_since_steer = 0.0
 
 	var caught: Vector2 = _pending_turn * clampf(_turn_response * delta, 0.0, 1.0)
 	_pending_turn -= caught
 
+	# Both axes turn the ship. Pitch used to move only the camera, with the hull
+	# left to catch up via auto-orientation — which is why aiming felt soft and
+	# why it stopped working at all once levelling no longer dragged the nose
+	# around. The camera is rigid now and the mouse flies the ship.
 	rotate_object_local(Vector3.UP, deg_to_rad(caught.y))
-	if absf(_camera_x_rotation + caught.x) < 90.0:
-		_camera_pivot.rotate_x(deg_to_rad(-caught.x))
-		_camera_x_rotation += caught.x
+	rotate_object_local(Vector3.RIGHT, deg_to_rad(-caught.x))
 
 
+# Keep the wings level without taking the nose off where the pilot pointed it.
+#
+# This used to rotate the ship's whole orientation toward "belly down" every
+# frame, which is a combined pitch and roll correction — so diving at a planet
+# meant fighting the assist the entire way in. On the ground it was worse: a
+# hard snap to level every frame, leaving almost no authority at all.
 func _process_auto_orientation(delta: float) -> void:
 	angular_velocity = Vector3.ZERO
 	angular_damp = 10.0
 
+	_since_steer += delta
+
 	if closest_force == Vector3.ZERO:
-		var dx: float = lerp(0.0, -_camera_x_rotation, _auto_orient_speed * delta)
-		_camera_x_rotation += dx
-		_camera_pivot.rotate_x(deg_to_rad(-dx))
-		rotate(_camera_pivot.global_transform.basis.x, deg_to_rad(dx))
 		return
 
 	var up_direction: Vector3 = -closest_force.normalized()
-	var current_q: Quaternion = global_transform.basis.get_rotation_quaternion()
-	var target_q: Quaternion = Quaternion(global_transform.basis.y, up_direction) * current_q
-
 	var ground: Planet = get_ground()
+
 	if ground != null:
 		angular_velocity = ground.constant_angular_velocity.project(up_direction)
 		angular_damp = 0.0
-		global_rotation = target_q.normalized().get_euler()
+
+	# Never level while the pilot is steering, or just after.
+	if is_piloted and _since_steer < _level_delay:
+		return
+
+	var current_q: Quaternion = global_basis.get_rotation_quaternion()
+	var target_q: Quaternion
+
+	if ground != null and linear_velocity.length() < _landing_speed * 4.0:
+		# Sitting on the surface: settle flat on the struts.
+		target_q = Quaternion(global_basis.y, up_direction) * current_q
 	else:
-		var rot: Quaternion = current_q.slerp(target_q.normalized(), _auto_orient_speed * delta)
-		global_rotation = rot.get_euler()
+		# Flying: correct roll only. Both vectors below are perpendicular to
+		# `forward`, so their rotation axis lies along it — a pure roll that
+		# leaves the heading untouched.
+		var forward: Vector3 = -global_basis.z
+		var desired_up: Vector3 = up_direction - forward * up_direction.dot(forward)
+		if desired_up.length_squared() < 0.0001:
+			return
+		target_q = Quaternion(global_basis.y, desired_up.normalized()) * current_q
+
+	var blend: float = clampf(_auto_orient_speed * delta, 0.0, 1.0)
+	# Basis, not global_rotation: assigning Euler angles round-trips the
+	# quaternion through a lossy conversion that jitters near the poles.
+	global_basis = Basis(current_q.slerp(target_q.normalized(), blend))
 
 
 func _input(e: InputEvent) -> void:

@@ -427,8 +427,48 @@ mass of its own, so the weight has to be faked.
 
 `_process_look_inputs` banks mouse movement as `_pending_turn` and works
 through that backlog at `_turn_response` per second. The ship lags the mouse
-going into a turn and coasts coming out. `_turn_response = 30` is close to the
-old instant behaviour; lower is heavier.
+going into a turn and coasts coming out. `_turn_response = 30` is close to
+instant; lower is heavier. Anything below about 10 stops reading as weight and
+starts reading as input lag.
+
+**Both axes turn the hull.** Pitch used to move only the camera pivot, leaving
+the hull to catch up via auto-orientation — which made aiming feel soft, and
+removed pitch authority entirely once levelling stopped dragging the nose
+around.
+
+### Auto-levelling must not fight the pilot
+
+Two rules, and the handling was bad without either:
+
+- **Roll only, in flight.** The old code rotated the ship's whole orientation
+  toward belly-down every frame, which is a combined pitch and roll correction,
+  so diving at a planet meant fighting the assist all the way in. Now the
+  planet-up is projected onto the plane perpendicular to `forward`; both
+  vectors are then perpendicular to forward, so their rotation axis lies along
+  it and the correction is a pure roll. Full levelling returns only when
+  actually resting on the surface.
+- **Suspended while steering**, for `_level_delay` seconds after the last mouse
+  input.
+
+Measured: pointing the nose 55° off level, roll settles to 0.7° over 180 ticks
+while the heading moves **0.0°**.
+
+Orientation is written as `global_basis = Basis(quat)`, not
+`global_rotation = quat.get_euler()`. The Euler round-trip is lossy and jitters
+near the poles.
+
+### Exhaust and engine note
+
+`_build_thrusters` makes two `GPUParticles3D` plumes plus an `OmniLight3D`
+glow, driven by `throttle × the forward component of thrust` so they do not
+fire out of the back while translating sideways. `local_coords = false` leaves
+the plume behind rather than dragging it along.
+
+`engine_audio.gd` synthesises the engine rather than sampling it — a few
+detuned harmonics plus one-pole-filtered noise, pitched and levelled by
+throttle, pushed into an `AudioStreamGenerator`. It needs no asset. Swap
+`stream` for a looping file and delete `_fill()` when you have a real
+recording; keep the throttle mapping.
 
 `throttle` spools over `_throttle_response` instead of switching between off
 and full. Measured at 0.3 s: 0.06 after one tick, 1.00 at 18 ticks, and
