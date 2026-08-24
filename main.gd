@@ -16,6 +16,9 @@ var time: float = 0.0
 ## Bodies that need real ground beneath them. The astronaut is the obvious one,
 ## but the ship's _ground_cast and ramp probe raycast against terrain too, and
 ## both fail silently against ground that was never generated.
+## Body the HUD is navigating toward. Null until the player picks one.
+var target: Planet = null
+
 var _terrain_clients: Array[Node3D] = []
 ## Which planet each client was on last tick, so its patch can be released.
 var _client_planet: Dictionary = {}
@@ -110,7 +113,137 @@ func _capture_radius(planet: Planet) -> float:
 # Release the mouse so the user can click UI, regardless of which body they are
 # currently controlling. Lives here rather than on the ship or the astronaut so
 # it keeps working across a swap.
+## Step to the next body, wrapping through "no target" so it can be cleared.
+func cycle_target() -> void:
+	if Planets.is_empty():
+		return
+	var i := Planets.find(target)
+	if i < 0:
+		target = Planets[0]
+	elif i == Planets.size() - 1:
+		target = null
+	else:
+		target = Planets[i + 1]
+
+
+## Distance from a world point to the target's surface, and how fast it is
+## closing. Positive closing speed means approaching. Returns [distance, speed]
+## in world units, or an empty array when nothing is targeted.
+func get_target_vector(world_pos: Vector3, world_velocity: Vector3) -> Array:
+	if target == null:
+		return []
+	var to_target := target.global_position - world_pos
+	var range_to_surface: float = to_target.length() - target.surface_radius
+	# The target is moving too, so closing speed is relative.
+	var relative := world_velocity - target.constant_linear_velocity
+	return [range_to_surface, relative.dot(to_target.normalized())]
+
+
+# --- Save / load -------------------------------------------------------------
+
+const SAVE_PATH := "user://quicksave.dat"
+
+## A save is small because of two earlier decisions: orbits are analytic, so the
+## entire solar system is recoverable from a single float, and terrain is a pure
+## function of a seed, so none of it is serialised at all. What is left is where
+## the player left their ship and their body.
+func save_game() -> bool:
+	var ship: Ship = null
+	var astronaut: Astronaut = null
+	for client in _terrain_clients:
+		if client is Ship:
+			ship = client
+		elif client is Astronaut:
+			astronaut = client
+	if ship == null or astronaut == null:
+		return false
+
+	var data := {
+		"version": 1,
+		"time": time,
+		"target": target.name if target != null else "",
+		"ship_transform": ship.global_transform,
+		"ship_linear_velocity": ship.linear_velocity,
+		"ship_angular_velocity": ship.angular_velocity,
+		"ship_piloted": ship.is_piloted,
+		"ship_ramp_open": ship.is_ramp_open,
+		"ship_headlight": ship.is_headlight_on,
+		"ship_cabin_light": ship.is_cabin_switch,
+		"astronaut_transform": astronaut.global_transform,
+		"astronaut_velocity": astronaut.get_world_velocity(),
+		"astronaut_active": astronaut.is_active,
+		"astronaut_lamp": astronaut.is_lamp_on,
+	}
+
+	var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+	if file == null:
+		push_warning("Could not write save: %s" % error_string(FileAccess.get_open_error()))
+		return false
+	file.store_var(data)
+	return true
+
+
+func load_game() -> bool:
+	if not FileAccess.file_exists(SAVE_PATH):
+		return false
+	var file := FileAccess.open(SAVE_PATH, FileAccess.READ)
+	if file == null:
+		return false
+	var data = file.get_var()
+	if typeof(data) != TYPE_DICTIONARY or data.get("version", 0) != 1:
+		push_warning("Save file is not readable by this version.")
+		return false
+
+	var ship: Ship = null
+	var astronaut: Astronaut = null
+	for client in _terrain_clients:
+		if client is Ship:
+			ship = client
+		elif client is Astronaut:
+			astronaut = client
+	if ship == null or astronaut == null:
+		return false
+
+	# Wind the whole system back first, so every body is where it was before
+	# anything is placed relative to it.
+	time = data["time"]
+	for planet in Planets:
+		planet.update_orbit(time)
+
+	target = null
+	for planet in Planets:
+		if planet.name == data["target"]:
+			target = planet
+
+	ship.global_transform = data["ship_transform"]
+	ship.linear_velocity = data["ship_linear_velocity"]
+	ship.angular_velocity = data["ship_angular_velocity"]
+	ship.is_ramp_open = data["ship_ramp_open"]
+	ship.is_headlight_on = data["ship_headlight"]
+	ship.is_cabin_switch = data["ship_cabin_light"]
+	ship.apply_light_state()
+
+	astronaut.set_active(data["astronaut_active"])
+	astronaut.is_lamp_on = data["astronaut_lamp"]
+	astronaut.apply_lamp_state()
+	astronaut.restore(data["astronaut_transform"], data["astronaut_velocity"])
+	ship.set_piloted(data["ship_piloted"])
+	return true
+
+
 func _input(event: InputEvent) -> void:
+	if event.is_action_pressed("quick_save"):
+		print("Saved." if save_game() else "Save failed.")
+		return
+
+	if event.is_action_pressed("quick_load"):
+		print("Loaded." if load_game() else "No save to load.")
+		return
+
+	if event.is_action_pressed("cycle_target"):
+		cycle_target()
+		return
+
 	if event.is_action_pressed("ui_cancel"):
 		if Input.get_mouse_mode() != Input.MOUSE_MODE_VISIBLE:
 			Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)

@@ -196,6 +196,13 @@ func toggle_headlight() -> void:
 	is_headlight_on = not is_headlight_on
 	_headlight.visible = is_headlight_on
 
+
+## Push the light flags out to the nodes. Used after a load, where the flags are
+## restored directly rather than through the toggles.
+func apply_light_state() -> void:
+	_headlight.visible = is_headlight_on
+	_cabin_light.visible = is_cabin_switch
+
 # --- Ramp -------------------------------------------------------------------
 
 func toggle_ramp() -> void:

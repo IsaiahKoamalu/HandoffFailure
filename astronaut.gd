@@ -151,6 +151,11 @@ func toggle_lamp() -> void:
 	_headlamp.visible = is_lamp_on
 
 
+## Push the lamp flag out to the node, for restoring a save.
+func apply_lamp_state() -> void:
+	_headlamp.visible = is_lamp_on
+
+
 func get_interaction_prompt() -> String:
 	var target := get_interactable()
 	return "[E] " + target.prompt if target != null else ""
@@ -180,6 +185,13 @@ func _update_frame(frame: Node3D) -> void:
 		reparent(new_parent, true)
 
 	velocity -= _frame_velocity_at(frame)
+
+
+## World-space velocity. `velocity` is relative to whatever frame the astronaut
+## is riding, so anything outside that frame — navigation, for one — has to add
+## the frame's own motion back on.
+func get_world_velocity() -> Vector3:
+	return velocity + _frame_velocity_at(_frame_body)
 
 
 # World-space velocity of a frame at the astronaut's position. Planet and Ship
@@ -319,6 +331,14 @@ func place_at(spawn: Transform3D) -> void:
 	velocity = Vector3.ZERO
 	_camera_x_rotation = 0.0
 	_camera_pivot.rotation = Vector3.ZERO
+
+
+## Drop the astronaut at a world transform carrying a world-space velocity.
+## Used by save/load, where `velocity` cannot be restored directly because it is
+## relative to whatever frame the astronaut turns out to be riding.
+func restore(world_transform: Transform3D, world_velocity: Vector3) -> void:
+	place_at(world_transform)
+	velocity = world_velocity - _frame_velocity_at(_frame_body)
 
 
 func set_active(active: bool) -> void:

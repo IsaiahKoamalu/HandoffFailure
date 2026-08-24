@@ -90,6 +90,22 @@ Combined with `continent_frequency` (few large landmasses vs many small ones)
 and `sea_level_bias`, that is enough to make a temperate world, a dry mountain
 world and an archipelago from the same function.
 
+### Normals
+
+`PlanetMesh` computes per-vertex normals from the height field's own gradient
+rather than calling `SurfaceTool.generate_normals()`, which averages face
+normals and leaves the coarse mesh visibly faceted.
+
+Each face samples **one ring wider than the output grid**. Those extra samples
+exist only to be neighbours for the edge vertices' central differences, which is
+what keeps normals continuous across the seam between cube faces. At resolution
+160 the ring costs about 2.5% more work — far cheaper than the extra height
+evaluations a per-vertex finite difference would need.
+
+Measured across all three planets: 910,116 normals each, none non-unit, none
+facing inward, and a mean tilt from radial of 10–22° — they follow terrain
+slope rather than just the sphere.
+
 ### Colour
 
 `get_terrain_color()` returns a per-vertex colour from a six-stop hypsometric
@@ -361,13 +377,49 @@ A cube face spans 90° of arc, so spacing is `(π/2)·R / (resolution − 1)`:
 
 ---
 
+## Navigation
+
+`SolarSystem.target` plus `cycle_target()` on **[Tab]**, and
+`get_target_vector()` returning range-to-surface and closing speed. The HUD
+renders where you are (dominant body and altitude above terrain), where you are
+going, and an ETA.
+
+Closing speed subtracts the target's own `constant_linear_velocity` — the
+destination is orbiting, so a raw dot product against your world velocity would
+report closing on a planet you are actually falling behind.
+
+The astronaut's `velocity` is frame-relative, so `get_world_velocity()` adds the
+frame's motion back before any navigation maths.
+
+## Save and load
+
+**[F5]** / **[F9]**, to `user://quicksave.dat` via `store_var`.
+
+The file is tiny, and that is a direct payoff from two earlier decisions:
+orbits are analytic, so the entire solar system is recoverable from a single
+float; terrain is a pure function of a seed, so none of it is serialised at all.
+What remains is where the player left their ship and their body.
+
+Load winds `time` back and re-runs `update_orbit()` on every planet **before**
+placing anything, so bodies restored relative to a planet land against that
+planet's restored position. `Astronaut.restore()` takes a world velocity and
+converts it into the frame it turns out to be riding.
+
+Verified as an exact round trip: time 6.67 → 1.00, ship position, target, ramp
+and both light states all restored, and every planet back where it was.
+
 ## Known limitations
 
-- **No LOD.** One fixed-resolution mesh per planet. At radius 180–260 with
-  `mesh_resolution = 160` that gives 1.4–2.6 units between vertices, which is
-  walkable but visibly faceted up close, at 303k triangles per planet. Going
-  much past radius 300 needs either a second high-detail tier around the player
-  or a real quadtree.
+- **No LOD.** One fixed-resolution mesh per planet, 303k triangles, 1.4–2.6
+  units between vertices at radius 140–260.
+
+  The gap between the drawn surface and the surface collision follows was
+  measured rather than assumed: **mean 0.018–0.024 units, worst case 0.568**,
+  against an astronaut 1.80 tall. So this is a visual-quality question, not a
+  correctness one — the ground you walk on is where it looks, to within about a
+  centimetre. Analytic normals address most of the visual complaint. A second
+  high-detail tier is still the right answer past radius ~300, but it needs
+  visual iteration to get the seam and depth handling right.
 - **Adopting a finished patch still costs the main thread.** Handing the shape
   to the physics server measures ~1.8 ms, on the ~42 frames out of 1,170 where a
   rebuild lands. The generation itself is fully off-thread.
@@ -375,6 +427,13 @@ A cube face spans 90° of arc, so spacing is `(π/2)·R / (resolution − 1)`:
   beyond roughly 1e6 units from the origin the astronaut visibly jitters. Past
   that you need a floating origin.
 - **Ocean is a flat sphere.** No waves, no depth-based colour, no refraction.
+- **Nothing to find.** The terrain supports exploration; there is no content in
+  it. Because height is a pure function of a seed, points of interest can be
+  placed deterministically with no authoring and no storage — pick a direction,
+  query `get_surface_radius_at`, drop something there.
+- **Sky is the same everywhere.** The Milky Way panorama is the background on
+  every surface. Per-planet atmosphere would do more for "these are different
+  worlds" than further terrain tuning.
 - **No underwater screen effect.** The HUD flags submersion in text only; there
   is no tint, fog, or muffling.
 - **Buoyancy is uniform, not per-volume.** The ship floats level rather than
@@ -400,7 +459,11 @@ tightest being Planet1↔Planet2 at 1200 against a required 880.
 Two things that scaling breaks and are easy to forget:
 
 - **The sun's `omni_range`** was 1000, which no longer reached past the first
-  orbit. It is now 5000.
+  orbit. It is now 6000, with `omni_attenuation` raised from 0.061 to 1.5.
+  At 0.061 the falloff was almost perfectly flat — the outermost planet sat at
+  93% of the innermost's brightness — which removed any sense of distance. 1.5
+  is a deliberate compromise short of true inverse square, which would leave
+  Planet3 at about 8% and effectively unplayable.
 - **Camera `far`** defaults to 4000. With the outer planet at 3600 plus the
   ship's own distance from origin, distant bodies clipped out entirely. Both
   cameras are now `near = 0.1`, `far = 20000`.

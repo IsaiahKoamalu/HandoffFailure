@@ -27,9 +27,10 @@ static func build(planet: Planet, resolution: int, fixed_radius: float = -1.0) -
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	for normal in FACE_NORMALS:
 		_add_face(st, planet, normal, resolution, fixed_radius)
-	st.generate_normals()
-	# No generate_tangents(): it errors with "UVs are required to generate
-	# tangents", and the triplanar material does not need them anyway.
+	# No generate_normals(): _add_face computes them analytically from the
+	# height field's own gradient, which is smooth where face-averaged normals
+	# are faceted. No generate_tangents() either — it errors without UVs, and
+	# the vertex-colour material does not need them.
 	return st.commit()
 
 
@@ -39,26 +40,49 @@ static func _add_face(st: SurfaceTool, planet: Planet, normal: Vector3, resoluti
 	var axis_a := Vector3(normal.y, normal.z, normal.x)
 	var axis_b := normal.cross(axis_a)
 
-	var verts := PackedVector3Array()
-	verts.resize(resolution * resolution)
 	# Terrain carries per-vertex colour; the fixed-radius ocean surface does not,
 	# and a SurfaceTool surface must be consistent about which attributes it has.
 	var tinted := fixed_radius <= 0.0
+
+	# Sample one ring wider than the output grid. Those extra samples are only
+	# used as neighbours for the normal at the edge vertices, which is what
+	# keeps normals continuous across the seam between cube faces. At
+	# resolution 160 the ring costs about 2.5% more work.
+	var w := resolution + 2
+	var step := 2.0 / (resolution - 1.0)
+	var grid := PackedVector3Array()
+	grid.resize(w * w)
 	var cols := PackedColorArray()
 	if tinted:
 		cols.resize(resolution * resolution)
 
-	for y in resolution:
-		for x in resolution:
-			var u := 2.0 * x / (resolution - 1.0) - 1.0
-			var v := 2.0 * y / (resolution - 1.0) - 1.0
+	for gy in w:
+		for gx in w:
+			var u := -1.0 + (gx - 1) * step
+			var v := -1.0 + (gy - 1) * step
 			var dir := _spherify(normal + axis_a * u + axis_b * v)
 			var r := fixed_radius
 			if tinted:
 				var h := planet.get_terrain_height(dir)
 				r = planet.surface_radius + h
-				cols[y * resolution + x] = planet.get_terrain_color(h)
-			verts[y * resolution + x] = dir * r
+				if gx >= 1 and gx <= resolution and gy >= 1 and gy <= resolution:
+					cols[(gy - 1) * resolution + (gx - 1)] = planet.get_terrain_color(h)
+			grid[gy * w + gx] = dir * r
+
+	var verts := PackedVector3Array()
+	var norms := PackedVector3Array()
+	verts.resize(resolution * resolution)
+	norms.resize(resolution * resolution)
+	for y in resolution:
+		for x in resolution:
+			var gi := (y + 1) * w + (x + 1)
+			var p := grid[gi]
+			# Central differences along both grid axes give the tangent plane.
+			var n := (grid[gi + 1] - grid[gi - 1]).cross(grid[gi + w] - grid[gi - w]).normalized()
+			if n.dot(p) < 0.0:
+				n = -n
+			verts[y * resolution + x] = p
+			norms[y * resolution + x] = n
 
 	for y in resolution - 1:
 		for x in resolution - 1:
@@ -68,18 +92,19 @@ static func _add_face(st: SurfaceTool, planet: Planet, normal: Vector3, resoluti
 			# right-hand rule. This order is the one that ends up outward;
 			# swapping the last two of each triangle turns the planet
 			# inside out.
-			_emit(st, verts, cols, tinted, i)
-			_emit(st, verts, cols, tinted, i + resolution + 1)
-			_emit(st, verts, cols, tinted, i + 1)
+			_emit(st, verts, norms, cols, tinted, i)
+			_emit(st, verts, norms, cols, tinted, i + resolution + 1)
+			_emit(st, verts, norms, cols, tinted, i + 1)
 
-			_emit(st, verts, cols, tinted, i)
-			_emit(st, verts, cols, tinted, i + resolution)
-			_emit(st, verts, cols, tinted, i + resolution + 1)
+			_emit(st, verts, norms, cols, tinted, i)
+			_emit(st, verts, norms, cols, tinted, i + resolution)
+			_emit(st, verts, norms, cols, tinted, i + resolution + 1)
 
 
 # set_color must be called before add_vertex, and consistently across the
 # whole surface.
-static func _emit(st: SurfaceTool, verts: PackedVector3Array, cols: PackedColorArray, tinted: bool, i: int) -> void:
+static func _emit(st: SurfaceTool, verts: PackedVector3Array, norms: PackedVector3Array, cols: PackedColorArray, tinted: bool, i: int) -> void:
+	st.set_normal(norms[i])
 	if tinted:
 		st.set_color(cols[i])
 	st.add_vertex(verts[i])
