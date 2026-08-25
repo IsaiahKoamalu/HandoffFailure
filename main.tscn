@@ -75,21 +75,18 @@ _orbital_angle = 180.0
 surface_radius = 180.0
 _day_length = 180.0
 terrain_enabled = true
-terrain_amplitude = 0.06
 terrain_seed = 7
-ocean_depth = 0.55
 mesh_resolution = 160
-sea_level_bias = 0.08
+sea_level_bias = -0.5
 detail_weight = 0.45
 ridge_weight = 0.55
-continent_frequency = 1.1
-patch_extent = 30.0
 color_deep = Color(0.04, 0.12, 0.26, 1)
 color_shallow = Color(0.13, 0.38, 0.52, 1)
 color_shore = Color(0.72, 0.68, 0.5, 1)
 color_low = Color(0.24, 0.42, 0.22, 1)
 color_high = Color(0.4, 0.33, 0.24, 1)
 color_peak = Color(0.92, 0.93, 0.95, 1)
+ocean_depth = 0.55
 water_color = Color(0.06, 0.28, 0.45, 0.72)
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="Planet1" unique_id=703310355]
@@ -116,13 +113,11 @@ terrain_enabled = true
 terrain_amplitude = 0.1
 terrain_seed = 21
 mesh_resolution = 160
-sea_level_bias = 0.26
-ocean_depth = 0.35
+continent_frequency = 100.0
+detail_frequency = 3.4
+sea_level_bias = -0.33999999999999997
 detail_weight = 0.25
 ridge_weight = 1.1
-continent_frequency = 0.8
-detail_frequency = 3.4
-patch_extent = 30.0
 color_deep = Color(0.1, 0.15, 0.16, 1)
 color_shallow = Color(0.2, 0.32, 0.32, 1)
 color_shore = Color(0.6, 0.45, 0.31, 1)
@@ -149,20 +144,19 @@ _day_length = 120.0
 terrain_enabled = true
 terrain_amplitude = 0.05
 terrain_seed = 43
-ocean_depth = 0.9
 mesh_resolution = 160
-sea_level_bias = -0.12
+continent_frequency = 100.0
+detail_frequency = 5.0
+sea_level_bias = -0.43
 detail_weight = 0.5
 ridge_weight = 0.4
-continent_frequency = 2.2
-detail_frequency = 5.0
-patch_extent = 30.0
 color_deep = Color(0.03, 0.16, 0.24, 1)
 color_shallow = Color(0.13, 0.52, 0.55, 1)
 color_shore = Color(0.87, 0.83, 0.63, 1)
 color_low = Color(0.25, 0.5, 0.26, 1)
 color_high = Color(0.3, 0.4, 0.24, 1)
 color_peak = Color(0.66, 0.66, 0.6, 1)
+ocean_depth = 0.9
 water_color = Color(0.05, 0.42, 0.5, 0.68)
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="Planet3" unique_id=1524999546]
@@ -225,7 +219,7 @@ offset_right = 400.0
 offset_bottom = 192.0
 theme_override_font_sizes/font_size = 20
 
-[node name="Label_Nav" type="Label" parent="HUD"]
+[node name="Label_Nav" type="Label" parent="HUD" unique_id=1928117952]
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
@@ -234,8 +228,8 @@ offset_top = 12.0
 offset_right = -12.0
 offset_bottom = 100.0
 grow_horizontal = 0
-horizontal_alignment = 2
 theme_override_font_sizes/font_size = 18
+horizontal_alignment = 2
 
 [node name="button_quit" type="Button" parent="HUD" unique_id=618215850]
 offset_left = 3.0
