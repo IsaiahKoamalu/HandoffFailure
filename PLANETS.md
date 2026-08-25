@@ -617,3 +617,55 @@ The ship settles at 1.74 below sea level — matching the predicted
 `_hull_depth / _buoyancy` — with water-relative drift decaying to 0.013 and
 world velocity tracking the planet's 10.000 units/s orbit. The astronaut rises
 at ~0.31 terminal and floats at exactly sea level.
+
+## The learned autopilot
+
+`rl/` trains a PPO agent to fly the ship down to a surface, and runs the result
+in game. Full write-up in `rl/README.md`; the build log with measurements is
+`rl/landing-log.html`.
+
+The agent flies through a seam on `Ship`, not around it:
+
+| Field | Meaning |
+| --- | --- |
+| `external_control` | When true, `command_*` replace mouse and keyboard |
+| `command_thrust` | Ship-local thrust, each component in [-1, 1] |
+| `command_turn` | Pitch, yaw, roll rates, each in [-1, 1] of `_stick_rate` |
+| `headless_agent` | Skip camera, exhaust, audio and terrain streaming |
+| `autopilot` | `ShipAutopilot`, or null in a build with no policy |
+
+Everything downstream of that seam is the shipping flight model, which is the
+whole point: a policy trained against a simplified copy of the ship is a policy
+that cannot fly the real one.
+
+**Thrust authority.** `_physics_process` thrusts along `movement.normalized()`,
+so for the player the magnitude of the request carries no information — a key is
+down or it is not. For an external controller the length of `command_thrust`
+scales the force. Without that the action-to-force map is a step function, and a
+policy trained through it learns to depend on its own exploration noise to cross
+the threshold — then flies completely differently the moment you take the
+distribution mean, which is what happens at play time. Measured: 39.7% landings
+before PPO fine-tuning, 3.0% after, while the training reward rose throughout.
+
+**Two facts about this ship that the training surfaced.**
+
+Thrust is 10.0 units/s² and surface gravity is 9.81 — a thrust-to-weight ratio
+of **1.02**. A ship pointing straight up at full power decelerates at 0.19
+units/s², so it cannot arrest a fall by thrust alone in less than a planet
+radius. Flight assist's drag term is this ship's real landing system; it caps
+free fall near `g / 1.6 = 6.1` units/s. Landing with assist off is not hard, it
+is impossible.
+
+The ship rests on its struts about 1.4 units above the analytic surface. The
+training environment has no colliders and ends an episode at altitude zero, so
+an autopilot that waits for zero waits forever — it flew eight perfect descents
+and then hovered a metre and a half up until it timed out. `ShipAutopilot`
+hands back at `HULL_CLEARANCE`, and this is the one gap between training and
+gameplay that no test inside the training environment can see.
+
+**Controls.** `[P]` in the cockpit engages it near a planet. Touching the
+controls takes the ship back.
+
+**Regenerating.** Adding any script with a new `class_name` requires
+`Godot --headless --path . --import` before a headless run, or the class fails
+to resolve, `_physics_process` aborts, and the trainer hangs with no output.

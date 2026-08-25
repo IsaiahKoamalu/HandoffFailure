@@ -39,8 +39,24 @@ func _process(_delta: float) -> void:
 		var ramp := "close" if _ship.is_ramp_open else "open"
 		var beam := "off" if _ship.is_headlight_on else "on"
 		var assist := "on" if _ship.flight_assist else "OFF"
-		_label_hint.text = "[E] Leave seat    [F] %s ramp    [L] headlight %s    [Z] assist %s    thr %3d%%" % [
-			ramp, beam, assist, roundi(_ship.throttle * 100.0)]
+		var auto := _autopilot_text()
+		_label_hint.text = "[E] Leave seat    [F] %s ramp    [L] headlight %s    [Z] assist %s    %s    thr %3d%%" % [
+			ramp, beam, assist, auto, roundi(_ship.throttle * 100.0)]
+
+
+## State of the trained landing autopilot.
+##
+## Shown even when there is no policy file, because the alternative is a key
+## that silently does nothing and no way to tell that from a broken one.
+func _autopilot_text() -> String:
+	var auto: ShipAutopilot = _ship.autopilot
+	if auto == null:
+		return "[P] autopilot n/a"
+	if auto.is_engaged:
+		return "[P] AUTOLAND"
+	if not auto.is_available:
+		return "[P] autopilot untrained"
+	return "[P] autopilot"
 
 
 # --- Navigation -------------------------------------------------------------

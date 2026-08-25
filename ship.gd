@@ -70,6 +70,9 @@ class_name Ship
 
 @export_category("Settings")
 @export var _mouse_sensitivity: float = 0.3
+## Degrees per second at full stick deflection, for external controllers. The
+## mouse path has no equivalent because a mouse delta is already an angle.
+@export var _stick_rate: float = 90.0
 ## Thrust as an acceleration, so handling does not change with the ship's mass.
 @export var _thrust: float = 10.0
 @export var _auto_orient_speed: float = 2.0
@@ -88,6 +91,29 @@ var is_submerged: bool = false
 var throttle: float = 0.0
 ## When on, the ship cancels sideways drift relative to the body it is near.
 var flight_assist: bool = true
+
+# --- External control --------------------------------------------------------
+# A seam for any pilot that is not a person at a mouse: the RL trainer, and the
+# trained policy flying the ship in game. The dynamics below this line do not
+# know or care which one is at the controls, which is the point — a policy
+# trained against `command_*` is flying the same ship the player does.
+
+## When true, `command_*` replace mouse and keyboard. Expected to be refreshed
+## every physics tick; they are not latched.
+var external_control: bool = false
+## Local-space thrust request, each component in [-1, 1]: +x right, +y up,
+## +z forward. Matches the six translation keys the player has.
+var command_thrust: Vector3 = Vector3.ZERO
+## Rotation request, each component in [-1, 1] of full stick: x pitch (nose up
+## positive), y yaw (left positive), z roll.
+var command_turn: Vector3 = Vector3.ZERO
+## Skip the camera, exhaust, audio and terrain streaming. Set before the ship
+## enters the tree. Training runs many ships at once and none of them are looked
+## at, so all of that is pure cost.
+var headless_agent: bool = false
+
+## Trained landing autopilot. Null in a checkout with no policy file.
+var autopilot: ShipAutopilot = null
 
 var _thrusters: Array[GPUParticles3D] = []
 var _exhaust_glow: OmniLight3D = null
@@ -110,8 +136,14 @@ func _ready() -> void:
 	add_collision_exception_with(_ramp)
 	_ramp_degrees = _ramp_closed_degrees
 	_ramp.rotation.x = deg_to_rad(_ramp_degrees)
+	if headless_agent:
+		# Terrain collision is replaced by analytic ground in training; see
+		# rl/landing_env.gd. Nothing here is rendered or heard.
+		return
 	_build_thrusters()
 	_build_engine_audio()
+	autopilot = ShipAutopilot.new(self)
+	add_child(autopilot)
 	set_piloted(true)
 	_register_terrain.call_deferred()
 
@@ -133,8 +165,14 @@ func _physics_process(delta: float) -> void:
 
 	_process_buoyancy(dominant)
 
-	var movement := _get_movement_input() if is_piloted else Vector3.ZERO
-	if is_piloted:
+	# Touching the controls takes the ship back. An autopilot you have to
+	# switch off before you can save yourself is not a feature.
+	if autopilot != null and autopilot.is_engaged and is_piloted:
+		if _get_movement_input() != Vector3.ZERO or not _mouse_delta.is_zero_approx():
+			autopilot.disengage("pilot took over")
+
+	var movement := _get_thrust_request()
+	if is_piloted or external_control:
 		_process_look_inputs(delta)
 
 	_process_parking(movement)
@@ -147,10 +185,25 @@ func _physics_process(delta: float) -> void:
 		throttle = move_toward(throttle, demand, delta / _throttle_response)
 
 	if movement != Vector3.ZERO:
-		apply_central_force(_thrust * mass * movement.normalized() * throttle)
+		# Thrust authority. For the player this is always 1.0: a key is down or
+		# it is not, and normalising the six-axis input is what keeps a
+		# diagonal from being faster than a straight line.
+		#
+		# For an external controller it is the length of the command, and that
+		# is worth the branch. Without it the action-to-force map is a step
+		# function: any command at all, however small, fires the engines at
+		# full power along its direction. A policy trained through that step
+		# learns to depend on its own exploration noise to cross the threshold,
+		# and then flies completely differently the moment you stop sampling
+		# and take the distribution mean — which is exactly what you do at play
+		# time. Measured: 39.7% landings before fine-tuning, 3.0% after, while
+		# the training reward went *up* the whole time.
+		var authority: float = minf(movement.length(), 1.0) if external_control else 1.0
+		apply_central_force(_thrust * mass * movement.normalized() * throttle * authority)
 
 	_process_flight_assist(dominant, movement)
-	_process_thrusters(movement)
+	if not headless_agent:
+		_process_thrusters(movement)
 
 	_process_auto_orientation(delta)
 	_process_ramp(delta)
@@ -173,6 +226,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("toggle_assist"):
 		get_viewport().set_input_as_handled()
 		toggle_flight_assist()
+	elif event.is_action_pressed("toggle_autopilot"):
+		get_viewport().set_input_as_handled()
+		if autopilot != null:
+			autopilot.toggle()
 
 
 # --- Exhaust and engine note -------------------------------------------------
@@ -424,6 +481,28 @@ func _on_ramp_control_activated(_who: Node3D) -> void:
 
 # --- Movement ---------------------------------------------------------------
 
+## Thrust the pilot is asking for, in world space, from whichever pilot is
+## flying. Not normalised: callers normalise, and the magnitude is meaningless
+## because thrust is all-or-nothing per axis.
+func _get_thrust_request() -> Vector3:
+	if external_control:
+		# Magnitude is preserved here and honoured in _physics_process. The
+		# keyboard path cannot express a partial command — a key is down or it
+		# is not — but an external controller can, and the difference matters
+		# more than it looks. See the note on thrust authority below.
+		var request := Vector3(
+			clampf(command_thrust.x, -1.0, 1.0),
+			clampf(command_thrust.y, -1.0, 1.0),
+			clampf(command_thrust.z, -1.0, 1.0),
+		)
+		if request.length() < 0.02:
+			return Vector3.ZERO
+		return global_basis * request
+	if not is_piloted:
+		return Vector3.ZERO
+	return _get_movement_input()
+
+
 func _get_movement_input() -> Vector3:
 	var movement := Vector3.ZERO
 
@@ -474,6 +553,22 @@ func _process_parking(movement: Vector3) -> void:
 # result lags the mouse going in and coasts on coming out, which is what gives
 # the rotation any sense of mass. Roll is unchanged: hold `rotate` and steer.
 func _process_look_inputs(delta: float) -> void:
+	if external_control:
+		# A policy outputs a rate, not a mouse delta, so it goes straight to the
+		# transform. The pending-turn backlog exists to give a mouse flick some
+		# mass; a controller that already emits smooth rates does not need it.
+		var stick := Vector3(
+			clampf(command_turn.x, -1.0, 1.0),
+			clampf(command_turn.y, -1.0, 1.0),
+			clampf(command_turn.z, -1.0, 1.0),
+		) * _stick_rate * delta
+		if not stick.is_zero_approx():
+			_since_steer = 0.0
+		rotate_object_local(Vector3.RIGHT, deg_to_rad(stick.x))
+		rotate_object_local(Vector3.UP, deg_to_rad(stick.y))
+		rotate_object_local(Vector3.BACK, deg_to_rad(stick.z))
+		return
+
 	var dx: float = _mouse_delta.y * _mouse_sensitivity
 	var dy: float = -_mouse_delta.x * _mouse_sensitivity
 

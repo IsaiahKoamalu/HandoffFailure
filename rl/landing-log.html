@@ -1,0 +1,1007 @@
+<title>Teaching the Ship to Land</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,600;1,400&display=swap">
+
+<style>
+:root {
+  --ground:   #E7EBF0;
+  --surface:  #F8FAFC;
+  --raised:   #FFFFFF;
+  --ink:      #0F1720;
+  --ink-soft: #48545F;
+  --ink-mute: #6D7A87;
+  --rule:     #C9D2DC;
+  --rule-soft:#DDE3EA;
+  --accent:   #2B4FD8;
+  --accent-w: #E6EBFC;
+  --good:     #16624A;
+  --good-w:   #DDEDE6;
+  --warn:     #A6360F;
+  --warn-w:   #F6E4DC;
+  --shadow:   0 1px 2px rgba(15, 23, 32, .06), 0 8px 24px -16px rgba(15, 23, 32, .3);
+
+  --measure: 34rem;
+  --wide: 58rem;
+}
+
+:root:not([data-theme="light"]) {
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:   #0A0F15;
+    --surface:  #121A23;
+    --raised:   #182230;
+    --ink:      #DFE7EF;
+    --ink-soft: #A2B0BE;
+    --ink-mute: #7E8D9C;
+    --rule:     #2A3745;
+    --rule-soft:#1E2A36;
+    --accent:   #7E9BFF;
+    --accent-w: #1A2440;
+    --good:     #5FC7A0;
+    --good-w:   #122C24;
+    --warn:     #F0885C;
+    --warn-w:   #33190F;
+    --shadow:   0 1px 2px rgba(0, 0, 0, .5), 0 8px 24px -16px rgba(0, 0, 0, .9);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --ground:   #0A0F15;
+  --surface:  #121A23;
+  --raised:   #182230;
+  --ink:      #DFE7EF;
+  --ink-soft: #A2B0BE;
+  --ink-mute: #7E8D9C;
+  --rule:     #2A3745;
+  --rule-soft:#1E2A36;
+  --accent:   #7E9BFF;
+  --accent-w: #1A2440;
+  --good:     #5FC7A0;
+  --good-w:   #122C24;
+  --warn:     #F0885C;
+  --warn-w:   #33190F;
+  --shadow:   0 1px 2px rgba(0, 0, 0, .5), 0 8px 24px -16px rgba(0, 0, 0, .9);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: "IBM Plex Serif", Georgia, "Times New Roman", serif;
+  font-size: 17px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+
+.page {
+  max-width: var(--wide);
+  margin: 0 auto;
+  padding: 0 1.5rem 6rem;
+}
+
+/* ---- masthead ---------------------------------------------------------- */
+
+.masthead {
+  padding: 4.5rem 0 2rem;
+  border-bottom: 2px solid var(--ink);
+}
+.eyebrow {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: .72rem;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 1.1rem;
+}
+h1 {
+  font-family: "IBM Plex Sans Condensed", "Arial Narrow", sans-serif;
+  font-weight: 700;
+  font-size: clamp(2.6rem, 7vw, 4.4rem);
+  line-height: .96;
+  letter-spacing: -.015em;
+  margin: 0 0 1.1rem;
+  text-wrap: balance;
+}
+.standfirst {
+  font-size: 1.2rem;
+  line-height: 1.55;
+  color: var(--ink-soft);
+  max-width: 36rem;
+  margin: 0 0 2rem;
+}
+.standfirst em { color: var(--ink); font-style: italic; }
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 1.25rem 2rem;
+  padding-bottom: 1.5rem;
+}
+.fact-k {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: .68rem;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  margin: 0 0 .3rem;
+}
+.fact-v {
+  font-family: "IBM Plex Sans Condensed", sans-serif;
+  font-weight: 600;
+  font-size: 1.35rem;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+}
+
+/* ---- sections ---------------------------------------------------------- */
+
+section { padding-top: 3.5rem; }
+
+.sec-head {
+  display: flex;
+  align-items: baseline;
+  gap: .9rem;
+  border-top: 1px solid var(--rule);
+  padding-top: .8rem;
+  margin-bottom: 1.6rem;
+}
+.sec-mark {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: .7rem;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  white-space: nowrap;
+}
+h2 {
+  font-family: "IBM Plex Sans Condensed", sans-serif;
+  font-weight: 700;
+  font-size: clamp(1.5rem, 3.4vw, 2.05rem);
+  line-height: 1.08;
+  letter-spacing: -.01em;
+  margin: 0;
+  text-wrap: balance;
+}
+h3 {
+  font-family: "IBM Plex Sans Condensed", sans-serif;
+  font-weight: 600;
+  font-size: 1.15rem;
+  letter-spacing: .005em;
+  margin: 2.2rem 0 .5rem;
+  max-width: var(--measure);
+}
+
+p { max-width: var(--measure); margin: 0 0 1.05rem; }
+p.lede { font-size: 1.06rem; color: var(--ink-soft); }
+ul { max-width: var(--measure); padding-left: 1.1rem; margin: 0 0 1.05rem; }
+li { margin-bottom: .5rem; }
+
+code {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: .85em;
+  background: var(--accent-w);
+  color: var(--ink);
+  padding: .1em .35em;
+  border-radius: 2px;
+}
+strong { font-weight: 600; }
+
+/* ---- scoreboard -------------------------------------------------------- */
+
+.scroll { overflow-x: auto; margin-bottom: 1.4rem; }
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 34rem;
+  font-family: "IBM Plex Sans Condensed", sans-serif;
+  font-size: .95rem;
+}
+caption {
+  text-align: left;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: .7rem;
+  letter-spacing: .11em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  padding-bottom: .6rem;
+}
+th, td {
+  text-align: right;
+  padding: .62rem .8rem;
+  border-bottom: 1px solid var(--rule-soft);
+  font-variant-numeric: tabular-nums;
+}
+th:first-child, td:first-child { text-align: left; }
+thead th {
+  font-weight: 600;
+  font-size: .72rem;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  border-bottom: 1px solid var(--rule);
+}
+tbody tr.hero-row td { background: var(--good-w); font-weight: 600; }
+tbody tr.dim td { color: var(--ink-soft); }
+td .unit { color: var(--ink-mute); font-size: .82em; }
+
+.pill {
+  display: inline-block;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: .7rem;
+  letter-spacing: .04em;
+  padding: .12em .5em;
+  border-radius: 2px;
+}
+.pill.win  { background: var(--good-w);  color: var(--good); }
+.pill.lose { background: var(--warn-w);  color: var(--warn); }
+.pill.flat { background: var(--rule-soft); color: var(--ink-mute); }
+
+/* ---- callout ----------------------------------------------------------- */
+
+.callout {
+  max-width: var(--measure);
+  background: var(--surface);
+  border-left: 3px solid var(--accent);
+  padding: 1.1rem 1.25rem;
+  margin: 0 0 1.4rem;
+  box-shadow: var(--shadow);
+}
+.callout p:last-child { margin-bottom: 0; }
+.callout .tag {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: .68rem;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  display: block;
+  margin-bottom: .45rem;
+}
+.callout.bad { border-left-color: var(--warn); }
+.callout.bad .tag { color: var(--warn); }
+
+/* ---- protocol diagram -------------------------------------------------- */
+
+.rig {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  padding: 1.5rem;
+  margin-bottom: 1.4rem;
+  box-shadow: var(--shadow);
+}
+.rig svg { display: block; width: 100%; height: auto; }
+
+/* ---- failure log ------------------------------------------------------- */
+
+.log { list-style: none; padding: 0; margin: 0; max-width: var(--wide); counter-reset: fail; }
+.log > li {
+  display: grid;
+  grid-template-columns: 3rem 1fr;
+  gap: 0 1.2rem;
+  padding: 1.5rem 0;
+  border-bottom: 1px solid var(--rule-soft);
+  margin: 0;
+}
+.log > li::before {
+  counter-increment: fail;
+  content: counter(fail, decimal-leading-zero);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: .85rem;
+  font-weight: 500;
+  color: var(--accent);
+  padding-top: .25rem;
+}
+.log h4 {
+  font-family: "IBM Plex Sans Condensed", sans-serif;
+  font-weight: 600;
+  font-size: 1.12rem;
+  margin: 0 0 .45rem;
+  max-width: var(--measure);
+}
+.log p { margin-bottom: .7rem; }
+.log p:last-child { margin-bottom: 0; }
+.evidence {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: .76rem;
+  line-height: 1.7;
+  color: var(--ink-soft);
+  background: var(--surface);
+  border: 1px solid var(--rule-soft);
+  padding: .55rem .75rem;
+  max-width: var(--measure);
+  overflow-x: auto;
+  white-space: pre;
+}
+
+/* ---- charts ------------------------------------------------------------ */
+
+.charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  gap: 1.25rem;
+  margin-bottom: 1.3rem;
+}
+.chart {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  padding: 1.1rem 1.1rem .8rem;
+  box-shadow: var(--shadow);
+}
+.chart h4 {
+  font-family: "IBM Plex Sans Condensed", sans-serif;
+  font-weight: 600;
+  font-size: 1rem;
+  margin: 0 0 .15rem;
+}
+.chart .sub {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: .68rem;
+  color: var(--ink-mute);
+  margin: 0 0 .8rem;
+}
+.chart canvas { display: block; width: 100%; height: 190px; }
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: .65rem;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: .7rem;
+  color: var(--ink-soft);
+}
+.legend span { display: inline-flex; align-items: center; gap: .4rem; }
+.swatch { width: 14px; height: 3px; border-radius: 2px; }
+
+/* ---- spec grid --------------------------------------------------------- */
+
+.spec {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 1.1rem;
+  margin-bottom: 1.3rem;
+}
+.card {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  padding: 1rem 1.1rem;
+}
+.card h4 {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: .7rem;
+  letter-spacing: .11em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 .6rem;
+}
+.card dl { margin: 0; font-size: .87rem; font-family: "IBM Plex Sans Condensed", sans-serif; }
+.card dt {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: .72rem;
+  color: var(--ink-mute);
+  float: left;
+  clear: left;
+  width: 3.1rem;
+  font-variant-numeric: tabular-nums;
+}
+.card dd { margin: 0 0 .3rem 3.4rem; }
+
+footer {
+  margin-top: 4rem;
+  padding-top: 1.4rem;
+  border-top: 2px solid var(--ink);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: .72rem;
+  color: var(--ink-mute);
+  max-width: var(--wide);
+}
+
+a { color: var(--accent); }
+a:focus-visible, :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+@media (max-width: 34rem) {
+  body { font-size: 16px; }
+  .log > li { grid-template-columns: 2rem 1fr; gap: 0 .8rem; }
+}
+</style>
+
+<div class="page">
+
+<header class="masthead">
+  <p class="eyebrow">GodotSpaceSim &middot; reinforcement learning</p>
+  <h1>Teaching the Ship to Land</h1>
+  <p class="standfirst">
+    A PPO agent trained against the real flight model, wired into the real cockpit.
+    It works end to end — and it still loses to <em>ten lines of proportional control</em>.
+    This is the log of how that happened and what each failure actually taught.
+  </p>
+  <div class="facts">
+    <div><p class="fact-k">Throughput</p><p class="fact-v">7,900 <span style="font-size:.7em;font-weight:400">steps/s</span></p></div>
+    <div><p class="fact-k">Env instances</p><p class="fact-v">32 ships</p></div>
+    <div><p class="fact-k">Steps trained</p><p class="fact-v">17.0 M</p></div>
+    <div><p class="fact-k">Best learned</p><p class="fact-v">39.7%</p></div>
+    <div><p class="fact-k">Hand-written</p><p class="fact-v">62.3%</p></div>
+  </div>
+</header>
+
+<section>
+  <div class="sec-head"><span class="sec-mark">Result</span><h2>The scoreboard, first</h2></div>
+
+  <p class="lede">
+    Every controller below flew 300 episodes in the same environment, from the same
+    spawn distribution, scored by the same gate: touch down under 2.0 units/s with the
+    belly within 26&deg; of the ground.
+  </p>
+
+  <div class="scroll">
+  <table>
+    <caption>300 episodes each &middot; 32 parallel ships &middot; policies evaluated at the distribution mean</caption>
+    <thead>
+      <tr>
+        <th>Controller</th><th>Landing rate</th><th>Mean return</th>
+        <th>Touchdown speed</th><th>Verdict</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="dim">
+        <td>No input &mdash; assist only</td><td>2.0%</td><td>&minus;7.60</td>
+        <td>3.75 <span class="unit">u/s</span></td><td><span class="pill flat">floor</span></td>
+      </tr>
+      <tr class="hero-row">
+        <td>Hand-written proportional</td><td>62.3%</td><td>63.08</td>
+        <td>1.58 <span class="unit">u/s</span></td><td><span class="pill win">best</span></td>
+      </tr>
+      <tr>
+        <td>PPO from scratch &mdash; 5.0 M</td><td>4.0%</td><td>14.13</td>
+        <td>5.86 <span class="unit">u/s</span></td><td><span class="pill lose">failed</span></td>
+      </tr>
+      <tr>
+        <td>Behaviour clone &mdash; 3k ticks</td><td>39.7%</td><td>61.63</td>
+        <td>1.79 <span class="unit">u/s</span></td><td><span class="pill flat">shipped</span></td>
+      </tr>
+      <tr>
+        <td>Clone + PPO &mdash; 3.0 M</td><td>3.0%</td><td>9.63</td>
+        <td>4.96 <span class="unit">u/s</span></td><td><span class="pill lose">regressed</span></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout bad">
+    <span class="tag">Read this before the graphs</span>
+    <p>
+      PPO never beat the baseline, and fine-tuning actively destroyed a working
+      cloned policy &mdash; while its own training reward went <em>up</em>. That gap
+      between "the reward improved" and "the ship landed" is the single most useful
+      thing in this document, and it is a reward-design failure, not a library bug.
+    </p>
+  </div>
+
+  <p>
+    The shipped policy is the behaviour clone at 39.7%. Inside the actual game it lands
+    <strong>8 out of 8</strong> attempts &mdash; but that number is flattered, and the
+    reason is worth knowing: the game has terrain colliders and the ship's own
+    auto-levelling, and the training environment has neither. The 39.7% is the harsher,
+    more honest measure.
+  </p>
+</section>
+
+<section>
+  <div class="sec-head"><span class="sec-mark">Rig</span><h2>Two processes in lock-step</h2></div>
+
+  <p>
+    Godot owns the physics; PyTorch owns the gradients. They exchange one line of JSON
+    per physics tick over loopback. The read blocks inside <code>_physics_process</code>,
+    which stalls the whole engine until Python answers &mdash; that is the point. Nothing
+    is dropped, nothing races, and a rollout replays exactly.
+  </p>
+
+  <div class="rig">
+    <svg viewBox="0 0 720 232" role="img" aria-label="Godot sends observations, rewards and done flags to Python; Python returns a batch of actions. Thirty-two ships share one solar system.">
+      <defs>
+        <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+        </marker>
+      </defs>
+      <g font-family="IBM Plex Mono, monospace" font-size="11">
+
+        <rect x="8" y="26" width="248" height="180" rx="3" fill="var(--raised)" stroke="var(--rule)"/>
+        <text x="20" y="18" fill="var(--ink-mute)" letter-spacing="1.4">GODOT &mdash; HEADLESS</text>
+        <text x="24" y="50" fill="var(--ink)" font-size="12" font-weight="600">rl/train.tscn</text>
+        <text x="24" y="72" fill="var(--ink-soft)">main.tscn, player stripped</text>
+        <text x="24" y="90" fill="var(--ink-soft)">3 planets &middot; analytic orbits</text>
+        <rect x="24" y="106" width="216" height="30" rx="2" fill="var(--accent-w)" stroke="var(--accent)"/>
+        <text x="34" y="125" fill="var(--ink)">32 &times; Ship (real physics)</text>
+        <text x="24" y="158" fill="var(--ink-soft)">command_thrust &middot; command_turn</text>
+        <text x="24" y="176" fill="var(--ink-soft)">gravity &middot; assist &middot; spool</text>
+        <text x="24" y="194" fill="var(--ink-mute)">altitude: analytic, no collider</text>
+
+        <g color="var(--accent)" stroke="var(--accent)">
+          <line x1="262" y1="86" x2="452" y2="86" stroke-width="1.4" marker-end="url(#ar)"/>
+          <line x1="452" y1="146" x2="262" y2="146" stroke-width="1.4" marker-end="url(#ar)"/>
+        </g>
+        <text x="272" y="76" fill="var(--accent)">obs[32][14] &middot; rew &middot; done</text>
+        <text x="272" y="166" fill="var(--accent)">act[32][6]</text>
+        <text x="290" y="116" fill="var(--ink-mute)" font-size="10">one exchange per tick, blocking</text>
+
+        <rect x="458" y="26" width="254" height="180" rx="3" fill="var(--raised)" stroke="var(--rule)"/>
+        <text x="470" y="18" fill="var(--ink-mute)" letter-spacing="1.4">PYTHON &mdash; PYTORCH CPU</text>
+        <text x="474" y="50" fill="var(--ink)" font-size="12" font-weight="600">python/ppo.py</text>
+        <text x="474" y="72" fill="var(--ink-soft)">actor-critic, 2 &times; 64, tanh</text>
+        <text x="474" y="90" fill="var(--ink-soft)">GAE(&lambda;) &middot; clipped surrogate</text>
+        <rect x="474" y="106" width="216" height="30" rx="2" fill="var(--accent-w)" stroke="var(--accent)"/>
+        <text x="484" y="125" fill="var(--ink)">running obs normalisation</text>
+        <text x="474" y="158" fill="var(--ink-soft)">exports policy.json</text>
+        <text x="474" y="176" fill="var(--ink-mute)">weights + mean + std</text>
+        <text x="474" y="194" fill="var(--ink-mute)">read back by GDScript in-game</text>
+      </g>
+    </svg>
+  </div>
+
+  <p>
+    The agent writes to <code>Ship.command_thrust</code> and <code>Ship.command_turn</code>
+    &mdash; the same seam a mouse and keyboard feed. Everything downstream is the shipping
+    code. That was a deliberate constraint: a policy trained against a simplified copy of
+    the ship is a policy that cannot fly the real one, and you find that out last.
+  </p>
+</section>
+
+<section>
+  <div class="sec-head"><span class="sec-mark">Task</span><h2>What the network sees and does</h2></div>
+
+  <p>
+    Every observation is relative to the surface being landed on and expressed in the
+    ship's own frame. That is what lets one policy generalise across three planets of
+    different radii, all orbiting, all spinning, approached from any heading.
+  </p>
+
+  <div class="spec">
+    <div class="card">
+      <h4>Observation &mdash; 14</h4>
+      <dl>
+        <dt>0</dt><dd>altitude / surface radius</dd>
+        <dt>1</dt><dd>tanh(alt / 0.05R) &mdash; sharp near the ground</dd>
+        <dt>2&ndash;4</dt><dd>surface-relative velocity, ship axes</dd>
+        <dt>5&ndash;7</dt><dd>local up in ship axes &mdash; the attitude error</dd>
+        <dt>8&ndash;9</dt><dd>vertical and horizontal speed</dd>
+        <dt>10</dt><dd>local gravity, 1.0 at the surface</dd>
+        <dt>11</dt><dd>engine spool</dd>
+        <dt>12</dt><dd>fraction of episode elapsed</dd>
+        <dt>13</dt><dd>submerged</dd>
+      </dl>
+    </div>
+    <div class="card">
+      <h4>Action &mdash; 6</h4>
+      <dl>
+        <dt>0&ndash;2</dt><dd>thrust along ship x, y, z</dd>
+        <dt>3</dt><dd>pitch rate</dd>
+        <dt>4</dt><dd>yaw rate</dd>
+        <dt>5</dt><dd>roll rate</dd>
+      </dl>
+      <p style="font-size:.82rem;color:var(--ink-mute);margin:.8rem 0 0;font-family:'IBM Plex Sans Condensed',sans-serif">
+        Exactly the control set the player has. Six continuous values in [&minus;1, 1],
+        sampled from a diagonal Gaussian during training and taken at the mean in game.
+      </p>
+    </div>
+    <div class="card">
+      <h4>Reward</h4>
+      <dl>
+        <dt>shape</dt><dd>potential-based on altitude, speed, alignment</dd>
+        <dt>land</dt><dd>graded bonus to +120</dd>
+        <dt>miss</dt><dd>flat &minus;5</dd>
+        <dt>time</dt><dd>&minus;0.02 per tick</dd>
+        <dt>gone</dt><dd>&minus;50 for leaving the SOI</dd>
+      </dl>
+      <p style="font-size:.82rem;color:var(--ink-mute);margin:.8rem 0 0;font-family:'IBM Plex Sans Condensed',sans-serif">
+        Shaping is potential-based, so by Ng, Harada &amp; Russell (1999) it cannot change
+        which policy is optimal &mdash; only how fast it is found.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="sec-mark">Log</span><h2>Nine things that were wrong</h2></div>
+
+  <p class="lede">
+    In order, because each one was only visible once the previous had been fixed. Six are
+    reward or action-space design; two are ordinary engineering; one is a fact about the
+    ship that made the original plan impossible.
+  </p>
+
+  <ol class="log">
+
+    <li>
+      <div>
+        <h4>The ship cannot land without flight assist</h4>
+        <p>
+          Thrust is 10.0 units/s&sup2;. Surface gravity is 9.81. That is a thrust-to-weight
+          ratio of <strong>1.02</strong> &mdash; a ship pointing straight up at full power
+          decelerates at 0.19 units/s&sup2;. Killing 30 units/s of descent would take 158
+          seconds and 2,400 units of altitude, more than a planet radius.
+        </p>
+        <p>
+          The original plan was to train with assist off, on the theory that the agent
+          should learn to replace it. There was no policy to find: the task had no
+          solution. The assist's drag term is this ship's actual landing system, capping
+          free fall near <code>g / 1.6 = 6.1</code> units/s. It stays on, and the policy's
+          job is to brake from there to under 2.0.
+        </p>
+        <div class="evidence">TWR = 10.00 / 9.81 = 1.02    net decel = 0.19 u/s^2
+to arrest 30 u/s: 158 s, ~2400 units  (planet radius = 180)</div>
+      </div>
+    </li>
+
+    <li>
+      <div>
+        <h4>Shaping scaled by the wrong speed</h4>
+        <p>
+          Observations are normalised by orbital speed at the surface &mdash; about 42
+          units/s. Reusing that scale in the reward made the entire difference between a
+          6 units/s crash and a perfect touchdown worth about <strong>0.7 reward</strong>,
+          against a 100-point landing bonus. The policy correctly ignored speed.
+        </p>
+        <p>
+          Rescaling to a landing-relevant 10 units/s was the first change that moved the
+          landing rate at all. A normalisation constant that is right for the network's
+          input can be badly wrong for the objective.
+        </p>
+      </div>
+    </li>
+
+    <li>
+      <div>
+        <h4>A pass/fail bonus is a cliff</h4>
+        <p>
+          The first reward paid +100 for a clean touchdown and nothing otherwise. Every
+          near miss scored identically to a forty-units-per-second smash, so there was no
+          gradient pointing back toward a landing &mdash; only a plateau with a hole in it.
+        </p>
+        <p>
+          Scoring speed and alignment continuously turned "not quite a landing" into a
+          slope. The strict pass/fail test survives, but only to label outcomes in the logs.
+        </p>
+      </div>
+    </li>
+
+    <li>
+      <div>
+        <h4>Penalising crashes taught it to refuse to land</h4>
+        <p>
+          With an impact-scaled penalty, hovering for a full episode cost about &minus;1.8
+          while a bad landing cost &minus;3. The policy learned to stall just off the deck
+          until the clock ran out &mdash; which was, given that reward, the correct answer.
+        </p>
+        <div class="evidence">timeout rate: 24.9% -> 40.6% -> 80.0% -> 87.5%  (iterations 20-60)</div>
+        <p>
+          The penalty is now flat and small, and time is charged at a rate that makes
+          running out the clock worse than any touchdown at all.
+        </p>
+      </div>
+    </li>
+
+    <li>
+      <div>
+        <h4>Alignment was gated but barely shaped</h4>
+        <p>
+          Belly-down alignment gates the terminal bonus outright. At a shaping weight of
+          0.3 it was worth at most 3 reward across a whole episode, against 120 for landing.
+          The policy learned to arrive fast and roughly sideways: return around 30, clean
+          landings around 3%.
+        </p>
+        <p>
+          Raising the weight to 1.5 roughly doubled the landing rate inside 400k steps.
+          <strong>Shape a gate in proportion to the gate.</strong>
+        </p>
+      </div>
+    </li>
+
+    <li>
+      <div>
+        <h4>Thrust was direction-only, so noise replaced the command</h4>
+        <p>
+          <code>Ship._physics_process</code> thrusts along <code>movement.normalized()</code>.
+          A keyboard has no analogue axis, so the player's thrust was always all-or-nothing
+          &mdash; fine for a person. For a policy exploring with Gaussian noise it is
+          poison: when the mean command is near zero, the noise does not perturb the
+          direction, it <em>is</em> the direction, and the ship fires at full power at
+          random.
+        </p>
+        <p>
+          The first fix was a deadzone, so "no thrust" could be expressed at all. That
+          created problem seven.
+        </p>
+      </div>
+    </li>
+
+    <li>
+      <div>
+        <h4>The deadzone made the mean policy a different policy</h4>
+        <p>
+          Training samples actions; play takes the distribution mean. With a deadzone, a
+          mean action can sit inside the dead region while sampled actions routinely escape
+          it &mdash; so the policy learned to rely on its own exploration noise to produce
+          thrust, and taking the mean removed the thrust entirely.
+        </p>
+        <div class="evidence">behaviour clone, evaluated at the mean   39.7% landed
+after 3.0M steps of PPO fine-tune        3.0% landed
+training return over the same window    rose to ~50</div>
+        <p>
+          Replacing the discontinuity with continuous thrust authority &mdash; command
+          length scales the force &mdash; made the mean representative again. This is the
+          bug I would most expect to ship unnoticed: every training metric looked fine.
+        </p>
+      </div>
+    </li>
+
+    <li>
+      <div>
+        <h4>A cloned actor with a random critic</h4>
+        <p>
+          Behaviour cloning arrives with a competent actor and an <em>untrained</em> critic.
+          Its advantage estimates are noise, and the first PPO updates spend that noise
+          dismantling the policy. Landings fell from 36% to 2.5% over 150 iterations, with
+          the training return falling alongside them.
+        </p>
+        <p>
+          Twenty-five iterations of value-only updates before the policy is allowed to move
+          made the fine-tune stop being a demolition. It still did not make it an
+          improvement &mdash; see the verdict below.
+        </p>
+      </div>
+    </li>
+
+    <li>
+      <div>
+        <h4>The autopilot waited for an altitude the ship cannot reach</h4>
+        <p>
+          The training environment ends an episode at altitude zero, measured to the ship's
+          origin, because there are no colliders in training. In the game the hull has
+          landing legs, so a ship resting on the ground reads about 1.4.
+        </p>
+        <p>
+          The in-game autopilot waited for zero. It flew the descent perfectly, eight for
+          eight, and then hovered a metre and a half off the deck until it timed out. No
+          test that lived inside the training environment could have caught this.
+        </p>
+        <div class="evidence">before: 8/8 "disengaged (timed out) at altitude 1.4-1.9"
+after:  8/8 "landed  speed 0.40-1.38  align 0.960-1.000"</div>
+      </div>
+    </li>
+
+  </ol>
+</section>
+
+<section>
+  <div class="sec-head"><span class="sec-mark">Curves</span><h2>What the training actually did</h2></div>
+
+  <p>
+    Both runs used 32 parallel ships and a 256-step rollout. The left pair is PPO from
+    scratch; the right pair is PPO fine-tuning a behaviour clone. Note the shape that
+    matters: in both runs <em>return climbs while the landing rate falls</em>.
+  </p>
+
+  <div class="charts">
+    <div class="chart">
+      <h4>Mean episode return</h4>
+      <p class="sub">higher is better &middot; what PPO optimises</p>
+      <canvas id="c-return" width="640" height="380"></canvas>
+      <div class="legend">
+        <span><i class="swatch" style="background:var(--accent)"></i>from scratch, 5.0M</span>
+        <span><i class="swatch" style="background:var(--warn)"></i>clone + PPO, 3.0M</span>
+      </div>
+    </div>
+    <div class="chart">
+      <h4>Clean landing rate</h4>
+      <p class="sub">higher is better &middot; what anyone actually wants</p>
+      <canvas id="c-land" width="640" height="380"></canvas>
+      <div class="legend">
+        <span><i class="swatch" style="background:var(--accent)"></i>from scratch, 5.0M</span>
+        <span><i class="swatch" style="background:var(--warn)"></i>clone + PPO, 3.0M</span>
+        <span><i class="swatch" style="background:var(--good)"></i>hand-written baseline</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout">
+    <span class="tag">The diagnosis</span>
+    <p>
+      Mean episode length falls from 769 ticks to 446 across the fine-tune while landings
+      fall with it and return stays flat. The policy is buying time savings with impact
+      speed, and the reward says that is correct: at &minus;0.02 per tick, arriving 300
+      ticks sooner is worth 6 reward, and the graded bonus does not punish a moderately
+      hard landing by much more than that. <strong>The objective and the metric came
+      apart, and the objective won.</strong>
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="sec-mark">Ship</span><h2>It runs in the game</h2></div>
+
+  <p>
+    The network is not a demo sitting beside the project. Get in the ship, get near a
+    planet, press <code>P</code>. <code>rl/neural_pilot.gd</code> loads
+    <code>policy.json</code> and runs the forward pass in GDScript &mdash; four small
+    matrix-vector products, no ONNX runtime, no GDExtension, nothing to install.
+  </p>
+
+  <p>
+    Two guards make that claim checkable rather than hopeful. The observation has exactly
+    one definition, <code>LandingEnv.build_observation</code>, used by both the trainer and
+    the cockpit; if they had drifted the policy would still run, still look busy, and
+    quietly fly a different task. And the GDScript forward pass is diffed against the numpy
+    one on fixed probes:
+  </p>
+
+  <div class="evidence">probe 0  gdscript [ 0.00768  0.32829 -0.05093 -0.25997  0.01019 -0.19487]
+         numpy    [ 0.00768  0.32829 -0.05093 -0.25997  0.01019 -0.19487]
+
+largest disagreement: 4.79e-07 (tolerance 2e-04)   PASS</div>
+
+  <p>
+    And the end-to-end check flies <code>main.tscn</code> itself &mdash; the real Ship node,
+    the real autopilot, real terrain colliders &mdash; for eight randomised approaches:
+    <strong>8/8 landed</strong>, touching down between 0.40 and 1.38 units/s with alignment
+    at 0.96 to 1.000.
+  </p>
+</section>
+
+<section>
+  <div class="sec-head"><span class="sec-mark">Next</span><h2>What I would change</h2></div>
+
+  <p>
+    The honest summary is that the environment, the bridge and the deployment path are
+    solid, and the reward is not. Everything below follows from that.
+  </p>
+
+  <ul>
+    <li>
+      <strong>Optimise the thing being measured.</strong> Drop the per-tick time charge, or
+      make the terminal bonus dominate it by an order of magnitude. The current objective
+      genuinely prefers a fast hard landing to a slow soft one.
+    </li>
+    <li>
+      <strong>Score alignment against the terrain normal, not the radial.</strong> On
+      Planet 2 the relief is 42% of the radius and 22% of the surface is steeper than the
+      ship's own <code>floor_max_angle</code>. "Belly toward the planet centre" is the
+      wrong target on a slope, and it adds noise to every episode.
+    </li>
+    <li>
+      <strong>Give the critic a real warm start</strong> &mdash; regress it on Monte-Carlo
+      returns from the demonstration rollout rather than freezing the actor and hoping.
+    </li>
+    <li>
+      <strong>Anneal the exploration noise explicitly.</strong> With the entropy bonus at
+      0.003 and no floor on the standard deviation, the sampled and mean policies drift
+      apart late in training with nothing reporting it.
+    </li>
+    <li>
+      <strong>Terminate on the collider, not on altitude zero.</strong> Streaming one
+      terrain patch per agent is expensive, but a cheap capsule test against the analytic
+      surface at the hull's actual clearance would close the training/gameplay gap that
+      produced failure nine.
+    </li>
+  </ul>
+
+  <p>
+    The larger lesson is the ordinary one, and it is worth more than a working policy would
+    have been: on a task where a competent controller fits in ten lines, reinforcement
+    learning has to earn its place, and here it has not yet. The thing that made it
+    <em>legible</em> that it had not was keeping a hand-written baseline in the evaluation
+    harness from the start.
+  </p>
+</section>
+
+<footer>
+  GodotSpaceSim &middot; rl/ &mdash; Godot 4.7.2, PyTorch CPU, PPO.<br>
+  17.0M environment steps across five runs &middot; 300-episode evaluations &middot;
+  all figures measured, none estimated.
+</footer>
+
+</div>
+
+<script>
+const CURVES = {"scratch-ppo":[[8192,-11.03,0.0,207.0],[90112,-5.62,0.0762,737.0],[180224,1.71,0.1122,943.0],[262144,-9.66,0.115,948.0],[344064,-2.18,0.085,916.0],[434176,-1.07,0.085,939.0],[516096,14.76,0.14,696.0],[598016,7.2,0.145,694.0],[688128,13.86,0.085,507.0],[770048,6.4,0.085,612.0],[851968,22.16,0.075,557.0],[942080,26.77,0.105,524.0],[1024000,21.78,0.09,609.0],[1105920,21.86,0.085,621.0],[1196032,31.77,0.08,549.0],[1277952,32.47,0.085,555.0],[1359872,33.82,0.055,581.0],[1441792,42.06,0.085,517.0],[1531904,34.41,0.125,568.0],[1613824,42.8,0.195,436.0],[1695744,35.62,0.125,480.0],[1785856,36.45,0.115,467.0],[1867776,35.35,0.095,549.0],[1949696,36.31,0.07,530.0],[2039808,41.9,0.14,515.0],[2121728,39.75,0.085,484.0],[2203648,37.14,0.07,552.0],[2293760,37.17,0.065,522.0],[2375680,41.84,0.03,476.0],[2457600,37.59,0.045,560.0],[2547712,36.06,0.08,570.0],[2629632,41.24,0.085,449.0],[2711552,39.12,0.125,571.0],[2801664,35.27,0.12,590.0],[2883584,36.83,0.065,538.0],[2965504,32.59,0.06,575.0],[3055616,46.46,0.14,567.0],[3137536,45.13,0.125,557.0],[3219456,44.06,0.135,503.0],[3309568,42.24,0.1,528.0],[3391488,44.04,0.145,553.0],[3473408,41.63,0.12,511.0],[3563520,44.16,0.18,583.0],[3645440,38.78,0.15,635.0],[3727360,48.12,0.2,503.0],[3809280,44.14,0.2,520.0],[3899392,41.46,0.145,520.0],[3981312,44.73,0.19,526.0],[4063232,38.79,0.095,504.0],[4153344,46.36,0.13,568.0],[4235264,42.85,0.085,508.0],[4317184,43.18,0.075,481.0],[4407296,46.81,0.07,436.0],[4489216,42.91,0.04,461.0],[4571136,38.78,0.03,523.0],[4661248,41.55,0.045,548.0],[4743168,43.59,0.125,562.0],[4825088,43.13,0.095,448.0],[4915200,42.84,0.11,478.0],[4997120,44.46,0.095,487.0]],"finetune":[[8192,50.53,0.3636,151.0],[57344,33.86,0.2222,545.0],[106496,40.16,0.2667,709.0],[163840,37.21,0.245,658.0],[212992,32.55,0.22,727.0],[262144,30.74,0.185,780.0],[311296,38.97,0.18,701.0],[360448,41.37,0.195,704.0],[409600,39.7,0.225,769.0],[466944,39.48,0.22,727.0],[516096,36.65,0.175,727.0],[565248,37.87,0.18,714.0],[614400,36.24,0.195,776.0],[663552,42.86,0.25,730.0],[720896,33.28,0.215,678.0],[770048,39.83,0.225,614.0],[819200,44.68,0.275,612.0],[868352,40.33,0.275,621.0],[917504,31.46,0.21,654.0],[974848,34.55,0.165,598.0],[1024000,35.72,0.175,595.0],[1073152,31.6,0.18,516.0],[1122304,29.23,0.145,473.0],[1171456,29.46,0.185,495.0],[1220608,25.14,0.2,454.0],[1277952,32.41,0.165,528.0],[1327104,34.16,0.17,546.0],[1376256,41.75,0.155,521.0],[1425408,35.26,0.14,456.0],[1474560,34.74,0.13,500.0],[1531904,30.63,0.09,477.0],[1581056,31.07,0.04,516.0],[1630208,35.2,0.03,452.0],[1679360,32.34,0.045,507.0],[1728512,43.56,0.055,506.0],[1785856,40.05,0.055,492.0],[1835008,42.28,0.03,545.0],[1884160,42.1,0.025,498.0],[1933312,43.38,0.035,507.0],[1982464,48.18,0.055,475.0],[2031616,43.08,0.09,456.0],[2088960,46.58,0.095,442.0],[2138112,43.23,0.085,504.0],[2187264,43.79,0.075,483.0],[2236416,42.21,0.065,477.0],[2285568,42.0,0.09,486.0],[2342912,35.08,0.1,490.0],[2392064,31.47,0.09,495.0],[2441216,35.28,0.08,418.0],[2490368,32.06,0.065,517.0],[2539520,37.68,0.08,416.0],[2596864,37.74,0.055,389.0],[2646016,37.32,0.05,404.0],[2695168,30.68,0.07,524.0],[2744320,28.61,0.055,478.0],[2793472,36.65,0.065,444.0],[2842624,34.09,0.065,440.0],[2899968,36.86,0.065,466.0],[2949120,32.52,0.075,534.0],[2998272,32.71,0.055,486.0]]};
+
+function css(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+function draw(canvasId, key, fmt, extraLine) {
+  const canvas = document.getElementById(canvasId);
+  const ratio = window.devicePixelRatio || 1;
+  const cssWidth = canvas.clientWidth || 320;
+  const cssHeight = 190;
+  canvas.width = cssWidth * ratio;
+  canvas.height = cssHeight * ratio;
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.clearRect(0, 0, cssWidth, cssHeight);
+
+  const padL = 38, padR = 8, padT = 10, padB = 22;
+  const w = cssWidth - padL - padR;
+  const h = cssHeight - padT - padB;
+
+  const series = [
+    { data: CURVES['scratch-ppo'], color: css('--accent') },
+    { data: CURVES['finetune'],    color: css('--warn') }
+  ];
+
+  let maxY = 0, maxX = 0;
+  for (const s of series) {
+    for (const row of s.data) {
+      maxY = Math.max(maxY, row[key]);
+      maxX = Math.max(maxX, row[0]);
+    }
+  }
+  let minY = 0;
+  for (const s of series) for (const row of s.data) minY = Math.min(minY, row[key]);
+  if (extraLine !== null) maxY = Math.max(maxY, extraLine);
+  const span = (maxY - minY) || 1;
+  maxY += span * 0.08;
+
+  const x = v => padL + (v / maxX) * w;
+  const y = v => padT + h - ((v - minY) / (maxY - minY)) * h;
+
+  // grid + axis labels
+  ctx.font = '10px "IBM Plex Mono", monospace';
+  ctx.fillStyle = css('--ink-mute');
+  ctx.strokeStyle = css('--rule-soft');
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 3; i++) {
+    const value = minY + (maxY - minY) * i / 3;
+    const py = Math.round(y(value)) + 0.5;
+    ctx.beginPath();
+    ctx.moveTo(padL, py);
+    ctx.lineTo(padL + w, py);
+    ctx.stroke();
+    ctx.textAlign = 'right';
+    ctx.fillText(fmt(value), padL - 6, py + 3);
+  }
+  ctx.textAlign = 'center';
+  ctx.fillText('0', padL, cssHeight - 6);
+  ctx.fillText((maxX / 1e6).toFixed(1) + 'M steps', padL + w - 26, cssHeight - 6);
+
+  if (extraLine !== null) {
+    ctx.strokeStyle = css('--good');
+    ctx.setLineDash([4, 3]);
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(padL, y(extraLine));
+    ctx.lineTo(padL + w, y(extraLine));
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  for (const s of series) {
+    ctx.strokeStyle = s.color;
+    ctx.lineWidth = 1.8;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    s.data.forEach((row, i) => {
+      const px = x(row[0]), py = y(row[key]);
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    });
+    ctx.stroke();
+  }
+}
+
+function render() {
+  draw('c-return', 1, v => v.toFixed(0), null);
+  draw('c-land',   2, v => (v * 100).toFixed(0) + '%', 0.623);
+}
+
+render();
+window.addEventListener('resize', render);
+const themeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+themeQuery.addEventListener('change', render);
+</script>
