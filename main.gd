@@ -63,6 +63,7 @@ func _physics_process(delta: float) -> void:
 	for planet in Planets:
 		planet.update_orbit(time)
 
+	_forget_freed_clients()
 	for client in _terrain_clients:
 		var planet := get_dominant_planet(client.global_position)
 		# Hand the old planet's patch back when a client moves on, so colliders
@@ -79,6 +80,30 @@ func _physics_process(delta: float) -> void:
 func register_terrain_client(node: Node3D) -> void:
 	if not _terrain_clients.has(node):
 		_terrain_clients.append(node)
+
+
+## Stop streaming terrain for a node. Safe to call for one never registered.
+func unregister_terrain_client(node: Node3D) -> void:
+	var planet: Planet = _client_planet.get(node)
+	if planet != null:
+		planet.release_client(node)
+	_client_planet.erase(node)
+	_terrain_clients.erase(node)
+
+
+## Drop clients that have been freed out from under us.
+##
+## Ship registers itself with a deferred call, so a node can be freed between
+## asking to be a client and becoming one — which is exactly what the RL
+## training host does when it strips the player's ship out of the scene. The
+## registration then lands on a dead node and every subsequent tick dereferences
+## it. Unregistering properly is the right fix and this is the backstop for the
+## cases that cannot: nothing else here can tell a freed client from a live one.
+func _forget_freed_clients() -> void:
+	for i in range(_terrain_clients.size() - 1, -1, -1):
+		if not is_instance_valid(_terrain_clients[i]):
+			_client_planet.erase(_terrain_clients[i])
+			_terrain_clients.remove_at(i)
 
 
 # Total acceleration due to every planet's gravity at a world-space point.
