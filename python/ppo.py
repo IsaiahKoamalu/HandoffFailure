@@ -109,50 +109,82 @@ def behaviour_clone(
     ticks: int,
     epochs: int,
     lr: float,
+    rounds: int = 1,
 ) -> np.ndarray:
-    """Regress the actor onto the hand-written controller before PPO starts.
+    """Regress the actor onto the hand-written controller, with DAgger rounds.
 
     PPO from scratch spent five million steps and still landed less often than
-    the ten-line proportional controller in evaluate.py. That is not a surprising
-    result and it is not really an algorithm failure: exploration has to discover
-    the *structure* of a descent-rate hold by random search, and a Gaussian around
-    zero is a bad way to find it.
+    the proportional controller in evaluate.py. That is not really an algorithm
+    failure: exploration has to discover the *structure* of a descent-rate hold
+    and a great-circle cruise by random search, and a Gaussian around zero is a
+    bad way to find either. So it is handed over instead.
 
-    So it is handed over instead. A few seconds of supervised regression puts the
-    network in the neighbourhood of a working control law, and PPO's job changes
-    from "invent landing" to "improve on this" — which is what policy gradient is
-    actually good at. The baseline is not optimal, so there is real headroom left:
-    it holds one fixed descent schedule regardless of attitude, fuel or terrain.
+    Plain cloning is not enough on its own, and the reason is worth stating
+    because the symptom is misleading. Fitting the expert's actions on the
+    expert's own states drives the training error down happily -- and the
+    resulting policy still fails, because its small errors move it into states
+    the expert never visited, where it has been taught nothing at all. Measured
+    here: action MSE improved 2.5x with no change in landing rate, while the
+    failures moved from ditching to hovering.
+
+    DAgger (Ross, Gordon & Bagnell, 2011) fixes exactly that. After the first
+    round the *learner* flies, and the expert labels the states the learner
+    actually reaches. The dataset stops being a description of how the expert
+    flies and becomes a description of how to recover from where the learner
+    ends up, which is the thing that was missing.
 
     Returns the last observation batch, so the caller can carry straight on.
     """
     observations: list[np.ndarray] = []
     targets: list[np.ndarray] = []
-
-    obs = env.reset()
-    for _ in range(ticks):
-        action = baseline_controller(obs)
-        observations.append(obs.copy())
-        targets.append(action)
-        normaliser.update(obs)
-        obs, _, _, _, _ = env.step(action)
-
-    x = torch.as_tensor(normaliser(np.concatenate(observations)))
-    y = torch.as_tensor(np.concatenate(targets))
     optimiser = torch.optim.Adam(model.actor.parameters(), lr=lr)
 
-    count = x.shape[0]
-    for epoch in range(epochs):
-        order = torch.randperm(count)
-        total = 0.0
-        for start in range(0, count, 4096):
-            batch = order[start : start + 4096]
-            loss = ((model.actor(x[batch]) - y[batch]) ** 2).mean()
-            optimiser.zero_grad()
-            loss.backward()
-            optimiser.step()
-            total += loss.item() * len(batch)
-        print(f"  clone epoch {epoch + 1}/{epochs}  mse {total / count:.5f}", flush=True)
+    obs = env.reset()
+    for round_index in range(max(rounds, 1)):
+        learner_drives = round_index > 0
+        for tick in range(ticks):
+            if tick % 60 == 0:
+                env.set_hud(
+                    phase=f"DAGGER {round_index + 1}/{rounds}" if learner_drives
+                    else "CLONING BASELINE",
+                    iter=tick,
+                    steps=tick * env.num_agents,
+                )
+            # The expert labels every state regardless of who is flying.
+            expert = baseline_controller(obs)
+            observations.append(obs.copy())
+            targets.append(expert)
+            normaliser.update(obs)
+
+            if learner_drives:
+                with torch.no_grad():
+                    action = model.actor(
+                        torch.as_tensor(normaliser(obs))
+                    ).numpy()
+                action = np.clip(action, -1.0, 1.0)
+            else:
+                action = expert
+            obs, _, _, _, _ = env.step(action)
+
+        x = torch.as_tensor(normaliser(np.concatenate(observations)))
+        y = torch.as_tensor(np.concatenate(targets))
+        count = x.shape[0]
+        for epoch in range(epochs):
+            order = torch.randperm(count)
+            total = 0.0
+            for start in range(0, count, 4096):
+                batch = order[start : start + 4096]
+                loss = ((model.actor(x[batch]) - y[batch]) ** 2).mean()
+                optimiser.zero_grad()
+                loss.backward()
+                optimiser.step()
+                total += loss.item() * len(batch)
+            if epoch == epochs - 1:
+                print(
+                    f"  round {round_index + 1}/{rounds}  "
+                    f"{count:,} samples  mse {total / count:.5f}",
+                    flush=True,
+                )
 
     return obs
 
@@ -170,7 +202,17 @@ def train(args: argparse.Namespace) -> None:
     normaliser = RunningNorm(OBS_SIZE)
 
     env = GodotVecEnv(
-        args.godot, args.project, num_agents=args.agents, port=args.port, seed=args.seed
+        args.godot,
+        args.project,
+        num_agents=args.agents,
+        port=args.port,
+        seed=args.seed,
+        render=args.render,
+        render_rate=args.render_rate,
+        # A rendered run is paced by the engine rather than by this side, so
+        # a rollout takes far longer in wall-clock terms without anything
+        # being wrong. The watchdog has to allow for that.
+        step_timeout=120.0 if args.render else 30.0,
     )
     n = args.agents
     rollout = args.rollout
@@ -189,7 +231,8 @@ def train(args: argparse.Namespace) -> None:
     if args.warm_start > 0:
         print(f"cloning the baseline controller for {args.warm_start} ticks", flush=True)
         raw_obs = behaviour_clone(
-            env, model, normaliser, args.warm_start, args.clone_epochs, args.clone_lr
+            env, model, normaliser, args.warm_start, args.clone_epochs,
+            args.clone_lr, args.dagger_rounds,
         )
     else:
         raw_obs = env.reset()
@@ -206,7 +249,8 @@ def train(args: argparse.Namespace) -> None:
     log_path = out_dir / "progress.csv"
     log_file = log_path.open("w", encoding="utf-8")
     log_file.write("step,iteration,return,length,land_rate,crash_rate,timeout_rate,"
-                   "escape_rate,mean_impact,value_loss,policy_loss,entropy,elapsed\n")
+                   "escape_rate,ditch_rate,miss_rate,mean_impact,value_loss,policy_loss,entropy,"
+                   "elapsed\n")
 
     global_step = 0
     iterations = args.steps // (rollout * n)
@@ -347,17 +391,30 @@ def train(args: argparse.Namespace) -> None:
         log_file.write(
             f"{global_step},{iteration},{mean_return:.3f},{mean_length:.1f},"
             f"{rates['landed']:.4f},{rates['crashed']:.4f},{rates['timeout']:.4f},"
-            f"{rates['escaped']:.4f},{mean_impact:.3f},{value_loss.item():.4f},"
+            f"{rates['escaped']:.4f},{rates['ditched']:.4f},{rates['missed']:.4f},"
+            f"{mean_impact:.3f},"
+            f"{value_loss.item():.4f},"
             f"{policy_loss.item():.4f},{entropy_value.item():.4f},{elapsed:.1f}\n"
         )
         log_file.flush()
+
+        # Cheap, and it rides along on the next action message, so there is no
+        # reason to rate-limit it the way the console line is.
+        env.set_hud(
+            phase="PPO",
+            iter=iteration,
+            steps=global_step,
+            ret=round(mean_return, 2),
+            land=round(rates["landed"], 4),
+            ditch=round(rates["ditched"], 4),
+        )
 
         if iteration % args.log_every == 0 or iteration == 1:
             print(
                 f"iter {iteration:4d}/{iterations}  step {global_step:>9,}  "
                 f"return {mean_return:8.2f}  len {mean_length:6.0f}  "
                 f"land {rates['landed']:5.1%}  crash {rates['crashed']:5.1%}  "
-                f"timeout {rates['timeout']:5.1%}  "
+                f"ditch {rates['ditched']:5.1%}  miss {rates['missed']:5.1%}  "
                 f"{global_step / max(elapsed, 1e-6):,.0f} sps",
                 flush=True,
             )
@@ -420,9 +477,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--warm-start", type=int, default=0,
                         help="ticks of baseline demonstration to clone before PPO")
     parser.add_argument("--clone-epochs", type=int, default=8)
+    parser.add_argument("--dagger-rounds", type=int, default=1,
+                        help="rounds of expert relabelling; 1 is plain cloning")
     parser.add_argument("--clone-lr", type=float, default=1e-3)
     parser.add_argument("--critic-warmup", type=int, default=0,
                         help="iterations of value-only updates before the policy moves")
+    parser.add_argument("--render", action="store_true",
+                        help="watch training in a window instead of running headless")
+    parser.add_argument("--render-rate", type=int, default=180,
+                        help="physics ticks per second while rendering; 60 is real time")
     parser.add_argument("--log-every", type=int, default=5)
     parser.add_argument("--save-every", type=int, default=20)
     return parser.parse_args()

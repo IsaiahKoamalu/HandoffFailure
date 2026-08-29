@@ -124,6 +124,7 @@ func _ready() -> void:
 
 	# Must run before anything can ask for a height.
 	_setup_noise()
+	_find_largest_landmass()
 
 
 # --- Terrain ----------------------------------------------------------------
@@ -238,6 +239,30 @@ func _build_water() -> void:
 	add_child(ocean)
 
 
+## Signed "landness" for a planet-LOCAL direction: above zero is dry ground,
+## below zero is seabed, and zero is exactly the coastline.
+##
+## This is the quantity `get_terrain_height` branches on, exposed on its own
+## because its *sign* decides land or sea and its *gradient* points toward the
+## nearest coast. The detail and ridge layers do neither: they are what makes a
+## continent bumpy, not what makes it a continent. Sampling this alone is also a
+## single noise lookup rather than three, which matters when a batch of agents
+## asks for a gradient every physics tick.
+##
+## Smooth across the shoreline, so it can be followed. A boolean land test
+## cannot be: it is flat on both sides and tells a searcher nothing about which
+## way to go.
+func get_land_signal(dir: Vector3) -> float:
+	if not terrain_enabled:
+		return 1.0
+	return _continents.get_noise_3dv(dir) + sea_level_bias
+
+
+## True where there is dry ground rather than sea, for a planet-LOCAL direction.
+func is_land_at(dir: Vector3) -> bool:
+	return get_land_signal(dir) > 0.0
+
+
 ## Radial offset from `surface_radius` for a planet-LOCAL direction, which must
 ## be normalized. Negative inside basins, which is what gives the ocean
 ## somewhere to sit; `get_min_terrain_height` is the floor.
@@ -249,7 +274,7 @@ func get_terrain_height(dir: Vector3) -> float:
 		return 0.0
 
 	# Positive is land, negative is basin.
-	var mask: float = _continents.get_noise_3dv(dir) + sea_level_bias
+	var mask: float = get_land_signal(dir)
 	if mask <= 0.0:
 		# Shelve smoothly from the shoreline down to the deep, so the seabed
 		# does not drop off a cliff the moment it crosses sea level.
@@ -308,6 +333,141 @@ func get_min_terrain_height() -> float:
 	if not terrain_enabled:
 		return 0.0
 	return -ocean_depth * terrain_amplitude * surface_radius
+
+
+
+# --- The largest continent ---------------------------------------------------
+
+## Directions sampled when locating the largest landmass. A continent is a big
+## target, so this only has to be fine enough to tell one apart from another --
+## and the flood fill below is quadratic, so doubling it costs four times as
+## much for no gain in the answer.
+const LANDMASS_SAMPLES: int = 1200
+
+## Unit direction, in this planet's own frame, of the middle of the biggest
+## connected landmass. Vector3.ZERO on a planet with no land at all.
+var largest_landmass_center: Vector3 = Vector3.ZERO
+## Angular radius of that landmass in radians -- the farthest any of its points
+## sits from the centre. Useful as a scale, not as a membership test: continents
+## are not discs, which is what `is_on_largest_landmass` is for.
+var largest_landmass_extent: float = 0.0
+## Fraction of the sphere it covers.
+var largest_landmass_share: float = 0.0
+
+## Its sampled points, kept so membership can be tested exactly rather than by
+## pretending the landmass is a circle.
+var _landmass_points: PackedVector3Array = PackedVector3Array()
+## Angular spacing of the sample grid, which sets how close a direction has to
+## be to a sampled point to count as the same landmass.
+var _landmass_reach: float = 0.0
+
+
+## Locate the biggest connected stretch of dry land, once, at startup.
+##
+## The agent is asked to land on a specific continent, which means something has
+## to know where that continent is. Nothing else in the project does: terrain is
+## a pure function of direction, so "biggest landmass" is not represented
+## anywhere until it is searched for. This runs a flood fill over an even
+## sampling of the sphere and keeps the largest connected component.
+##
+## Costs a few hundred milliseconds per planet at load and never runs again.
+func _find_largest_landmass() -> void:
+	if not terrain_enabled:
+		return
+
+	var directions := _fibonacci_sphere(LANDMASS_SAMPLES)
+	var land := PackedInt32Array()
+	land.resize(LANDMASS_SAMPLES)
+	for i in LANDMASS_SAMPLES:
+		land[i] = 1 if get_land_signal(directions[i]) > 0.0 else 0
+
+	# N points spread over a sphere of area 4*PI leave each with 4*PI/N, hence
+	# this spacing; 1.5x of it reaches the immediate ring of neighbours without
+	# stepping across a one-point channel of sea.
+	_landmass_reach = 1.5 * sqrt(4.0 * PI / float(LANDMASS_SAMPLES))
+	var reach_squared: float = _landmass_reach * _landmass_reach
+
+	var seen := PackedInt32Array()
+	seen.resize(LANDMASS_SAMPLES)
+	var best: PackedInt32Array = PackedInt32Array()
+
+	for start in LANDMASS_SAMPLES:
+		if seen[start] == 1 or land[start] == 0:
+			continue
+		var component := PackedInt32Array()
+		var stack: Array[int] = [start]
+		seen[start] = 1
+		while not stack.is_empty():
+			var current: int = stack.pop_back()
+			component.append(current)
+			for other in LANDMASS_SAMPLES:
+				if seen[other] == 1 or land[other] == 0:
+					continue
+				if directions[current].distance_squared_to(directions[other]) <= reach_squared:
+					seen[other] = 1
+					stack.append(other)
+		if component.size() > best.size():
+			best = component
+
+	if best.is_empty():
+		push_warning("%s has terrain enabled but no dry land to land on." % name)
+		return
+
+	var centre := Vector3.ZERO
+	_landmass_points.resize(best.size())
+	for k in best.size():
+		var dir: Vector3 = directions[best[k]]
+		_landmass_points[k] = dir
+		centre += dir
+
+	# Summing unit vectors and renormalising gives the spherical centroid. For a
+	# landmass wrapped most of the way round a planet the sum can cancel to
+	# nothing; falling back to any member keeps the target well defined.
+	largest_landmass_center = centre.normalized() if centre.length_squared() > 1e-6 \
+		else _landmass_points[0]
+	largest_landmass_share = float(best.size()) / float(LANDMASS_SAMPLES)
+
+	var extent: float = 0.0
+	for dir in _landmass_points:
+		extent = maxf(extent, acos(clampf(dir.dot(largest_landmass_center), -1.0, 1.0)))
+	largest_landmass_extent = extent
+
+
+## True when a planet-LOCAL direction is dry ground belonging to the biggest
+## landmass, rather than to some other island.
+##
+## Tested against the sampled points rather than against a circle around the
+## centre, because a continent is not a disc and a circular test would both
+## accept sea off its coast and reject its own peninsulas.
+func is_on_largest_landmass(dir: Vector3) -> bool:
+	if _landmass_points.is_empty() or get_land_signal(dir) <= 0.0:
+		return false
+	var reach_squared: float = _landmass_reach * _landmass_reach
+	for point in _landmass_points:
+		if dir.distance_squared_to(point) <= reach_squared:
+			return true
+	return false
+
+
+## Angle in radians between a planet-LOCAL direction and the target continent.
+func angle_to_largest_landmass(dir: Vector3) -> float:
+	if largest_landmass_center == Vector3.ZERO:
+		return 0.0
+	return acos(clampf(dir.dot(largest_landmass_center), -1.0, 1.0))
+
+
+## Evenly spaced points on a sphere, via the golden angle. Deterministic, so
+## every run and every client agrees on where the continent is.
+static func _fibonacci_sphere(count: int) -> Array[Vector3]:
+	var points: Array[Vector3] = []
+	points.resize(count)
+	var golden: float = PI * (3.0 - sqrt(5.0))
+	for i in count:
+		var y: float = 1.0 - 2.0 * (float(i) + 0.5) / float(count)
+		var radius: float = sqrt(maxf(1.0 - y * y, 0.0))
+		var theta: float = golden * float(i)
+		points[i] = Vector3(cos(theta) * radius, y, sin(theta) * radius)
+	return points
 
 
 # --- Ocean ------------------------------------------------------------------

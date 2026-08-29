@@ -14,8 +14,8 @@ extends Node3D
 ## every test in rl/ would still pass and only this one would fail.
 
 const MAIN_SCENE := "res://main.tscn"
-const ATTEMPTS: int = 8
-const MAX_TICKS: int = 2000
+const ATTEMPTS: int = 12
+const MAX_TICKS: int = 10000
 
 var _ship: Ship
 var _planet: Planet
@@ -24,6 +24,9 @@ var _attempt: int = 0
 var _landed: int = 0
 var _rng := RandomNumberGenerator.new()
 var _peak_speed: float = 0.0
+## How far the ship started from the target continent, in radians, so the
+## report says whether an attempt was a short hop or half a planet.
+var _start_angle: float = 0.0
 
 
 func _ready() -> void:
@@ -42,23 +45,51 @@ func _ready() -> void:
 		print("RESULT no_policy")
 		get_tree().quit(1)
 		return
+	print("target: %s, largest landmass %.1f%% of the sphere, extent %.2f rad" % [
+		_planet.name, _planet.largest_landmass_share * 100.0,
+		_planet.largest_landmass_extent,
+	])
 	_place()
 
 
 func _place() -> void:
+	# Anywhere at all. That is the claim being tested: the player can be over
+	# the wrong hemisphere, high up, tumbling, carrying orbital velocity, and
+	# press the key. Deliberately not biased toward the target continent -- a
+	# check that started next to the answer would pass without meaning anything.
 	var direction := Vector3(_rng.randfn(), _rng.randfn(), _rng.randfn()).normalized()
 	var ground: float = _planet.get_surface_radius_at(direction)
-	var altitude: float = _planet.surface_radius * _rng.randf_range(0.12, 0.32)
+	var altitude: float = _planet.surface_radius * _rng.randf_range(0.05, 1.10)
 	var position: Vector3 = _planet.global_position + direction * (ground + altitude)
 
 	var side: Vector3 = direction.cross(Vector3(_rng.randfn(), _rng.randfn(), _rng.randfn())).normalized()
 	var basis := Basis(side, direction, side.cross(direction)).orthonormalized()
-	basis = basis.rotated(side, _rng.randf_range(-0.3, 0.3))
+	# Half the attempts start tumbling and completely off level.
+	if _attempt % 2 == 0:
+		basis = Basis(
+			Vector3(_rng.randfn(), _rng.randfn(), _rng.randfn()).normalized(),
+			_rng.randf_range(-PI, PI)
+		) * basis
+	else:
+		basis = basis.rotated(side, _rng.randf_range(-0.3, 0.3))
+
+	var forward: Vector3 = side.cross(direction)
+	var circular: float = sqrt(
+		_planet.standard_gravitational_parameter / maxf(ground + altitude, 1.0)
+	)
+	var heading: float = _rng.randf_range(-PI, PI)
+	var tangential: float = circular * _rng.randf_range(0.0, 0.8)
 
 	_ship.global_transform = Transform3D(basis, position)
 	_ship.linear_velocity = _planet.get_surface_velocity(position) \
-		+ direction * _rng.randf_range(-5.0, 0.0)
-	_ship.angular_velocity = Vector3.ZERO
+		+ (side * cos(heading) + forward * sin(heading)) * tangential \
+		+ direction * _rng.randf_range(-6.0, 0.0)
+	_ship.angular_velocity = Vector3(
+		_rng.randfn(), _rng.randfn(), _rng.randfn()
+	) * (0.5 if _attempt % 2 == 0 else 0.0)
+	_start_angle = _planet.angle_to_largest_landmass(
+		(_planet.global_basis.inverse() * direction).normalized()
+	)
 	_ship.throttle = 0.0
 	_ticks = 0
 	_peak_speed = 0.0
@@ -84,7 +115,11 @@ func _physics_process(_delta: float) -> void:
 		# The same gate LandingEnv scores with, so this number is comparable to
 		# everything reported by python/evaluate.py.
 		var align: float = _ship.global_basis.y.dot(frame[1])
-		if speed <= 2.0 and align >= 0.9:
+		if not LandingEnv.is_over_land(_ship.global_position, _planet):
+			verdict = "DITCHED speed %5.2f align %.3f" % [speed, align]
+		elif not LandingEnv.is_on_target_site(_ship.global_position, _planet):
+			verdict = "MISSED  wrong landmass, speed %5.2f" % speed
+		elif speed <= 2.0 and align >= 0.9:
 			_landed += 1
 			verdict = "landed  speed %5.2f align %.3f" % [speed, align]
 		else:
@@ -92,9 +127,15 @@ func _physics_process(_delta: float) -> void:
 	elif not _ship.autopilot.is_engaged:
 		finished = true
 		var align_now: float = _ship.global_basis.y.dot(frame[1])
-		if _ship.autopilot.status == "landed" and speed <= 2.0 and align_now >= 0.9:
+		var on_site: bool = LandingEnv.is_on_target_site(_ship.global_position, _planet)
+		var dry: bool = LandingEnv.is_over_land(_ship.global_position, _planet)
+		if _ship.autopilot.status == "landed" and speed <= 2.0 and align_now >= 0.9 and on_site:
 			_landed += 1
 			verdict = "landed  speed %5.2f align %.3f alt %.2f" % [speed, align_now, altitude]
+		elif not dry:
+			verdict = "DITCHED speed %5.2f alt %.1f" % [speed, altitude]
+		elif not on_site:
+			verdict = "MISSED  wrong landmass, speed %5.2f" % speed
 		else:
 			verdict = "%s speed %5.2f alt %.1f" % [_ship.autopilot.status, speed, altitude]
 	elif _ticks >= MAX_TICKS:
@@ -104,7 +145,9 @@ func _physics_process(_delta: float) -> void:
 	if not finished:
 		return
 
-	print("attempt %d  %-46s peak %5.2f  %4d ticks" % [_attempt + 1, verdict, _peak_speed, _ticks])
+	print("attempt %2d  start %4.2f rad  %-46s %5d ticks" % [
+		_attempt + 1, _start_angle, verdict, _ticks,
+	])
 	_ship.autopilot.disengage("test over")
 	_attempt += 1
 	if _attempt >= ATTEMPTS:

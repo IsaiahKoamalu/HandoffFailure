@@ -10,7 +10,11 @@ extends Node3D
 ##     Godot -> Python  {"obs": [[...] x N], "rew": [...], "done": [...],
 ##                       "trunc": [...], "outcome": [...],
 ##                       "final": {"<i>": [...]}}
-##     Python -> Godot  {"act": [[...] x N]}   or   {"cmd": "close"}
+##     Python -> Godot  {"act": [[...] x N], "hud": {...}}
+##                      or {"cmd": "close"}
+##
+## "hud" is optional and ignored unless --render is on: it is whatever the
+## trainer wants shown on screen, and nothing in the loop reads it.
 ##
 ## The read blocks inside _physics_process, which stalls the whole engine until
 ## Python answers. That is the point: the two processes are in lock-step, so a
@@ -22,6 +26,11 @@ extends Node3D
 ##
 ## `--fixed-fps` is what stops the engine sleeping to hit real time; without it
 ## training runs at 60 steps/second no matter how fast the machine is.
+##
+## Drop --headless and pass `--render=1` to watch it instead. That opens a
+## chase camera and a live readout (rl/spectator.gd) and costs some throughput,
+## but changes nothing about the simulation: same seed, same trajectories, same
+## gradients. Only the rate they arrive at moves.
 
 const MAIN_SCENE := "res://main.tscn"
 const SHIP_SCENE := "res://ship.tscn"
@@ -34,8 +43,14 @@ const PLAYER_ONLY := ["HUD", "Ship", "Astronaut"]
 @export var seed_value: int = 1
 ## Passed through to LandingEnv.flight_assist.
 @export var assist: bool = true
+## Open a window with a chase camera and a readout instead of running blind.
+@export var render: bool = false
+## Physics ticks per simulated second when rendering. The step stays 1/60 of a
+## simulated second, so this is a playback speed and not a physics change.
+@export var render_rate: int = 180
 
 var _env: LandingEnv
+var _spectator: TrainSpectator = null
 var _server := TCPServer.new()
 var _peer: StreamPeerTCP = null
 var _rx := PackedByteArray()
@@ -77,8 +92,17 @@ func _ready() -> void:
 	_env.name = "Env"
 	_env.num_agents = num_agents
 	_env.flight_assist = assist
+	_env.visible_agents = render
 	add_child(_env)
 	_env.setup(load(SHIP_SCENE), landable, seed_value)
+
+	if render:
+		# Faster than real time, but still a fixed step. The trainer is on the
+		# other end of a blocking socket, so this is a ceiling rather than a
+		# target: the loop still runs at whatever the slower half manages.
+		Engine.physics_ticks_per_second = render_rate
+		_spectator = TrainSpectator.new(_env)
+		add_child(_spectator)
 
 	_obs.resize(num_agents * LandingEnv.OBS_SIZE)
 	_act.resize(num_agents * LandingEnv.ACT_SIZE)
@@ -104,6 +128,8 @@ func _parse_arguments() -> void:
 			"--port": port = int(pair[1])
 			"--seed": seed_value = int(pair[1])
 			"--assist": assist = int(pair[1]) != 0
+			"--render": render = int(pair[1]) != 0
+			"--rate": render_rate = int(pair[1])
 
 
 func _wait_for_client() -> void:
@@ -157,6 +183,8 @@ func _physics_process(_delta: float) -> void:
 		impacts[i] = _env.last_impact[i]
 
 		if result[1] or result[2]:
+			if _spectator != null:
+				_spectator.note_outcome(_env.last_outcome[i])
 			var terminal := PackedFloat32Array()
 			terminal.resize(LandingEnv.OBS_SIZE)
 			_env.observe(i, terminal, 0)
@@ -198,6 +226,11 @@ func _physics_process(_delta: float) -> void:
 		_env.reset_all()
 		_first_tick = true
 		return
+
+	if _spectator != null:
+		var hud = message.get("hud", null)
+		if typeof(hud) == TYPE_DICTIONARY:
+			_spectator.set_stats(hud)
 
 	var actions: Array = message.get("act", [])
 	if actions.size() != num_agents:

@@ -30,41 +30,140 @@ import numpy as np
 
 from godot_env import ACT_SIZE, OBS_SIZE, OUTCOME_NAMES, RUNNING, LANDED, GodotVecEnv
 
+# Anchored to this file rather than the working directory. Every documented
+# invocation is from python/, so a bare relative path quietly resolved to a
+# stray python/rl/ instead of the real run directory -- and loaded an old
+# policy rather than reporting that it could not find the new one.
+DEFAULT_POLICY = Path(__file__).resolve().parent.parent / "rl/runs/landing/policy.json"
+
 # Observation layout, mirroring LandingEnv.build_observation.
 ALT = 0
 V_LOCAL = slice(2, 5)
 UP_LOCAL = slice(5, 8)
 V_UP = 8
+LANDNESS = 14
+TO_SITE = slice(15, 18)
+SITE_ANGLE = 18
+
+# Do not commit to a descent right on the waterline. The land signal is a
+# smooth field and the shoreline is where it crosses zero, so a touchdown aimed
+# at exactly zero lands half the time in the surf.
+SHORE_MARGIN = 0.05
+# Altitude, in radii, held while crossing to the target continent. High enough
+# to clear the terrain by a wide margin and low enough that arriving does not
+# then need a long descent.
+CRUISE_ALT = 0.16
+# Angle to the centre of the continent, in radians, inside which dry ground can
+# be assumed to belong to it. The target covers 12-30% of a planet, so its
+# angular radius runs to about a radian; this is comfortably inside that. Being
+# generous here matters -- insisting on the exact centre meant flying past
+# perfectly good landing ground to reach a point, and then hovering over it.
+ARRIVED_ANGLE = 0.55
+# Floor on the closing rate while over water. Without it a ship that arrives
+# above a bay stalls: it is close enough that the speed target has decayed to
+# nothing, and wet enough that it refuses to descend, so it hovers until the
+# clock runs out. This keeps it walking until there is ground beneath it.
+WET_CLOSING_FLOOR = 0.4
+# Proportional gain on the horizontal velocity error.
+BRAKE_GAIN = 8.0
+# Horizontal speed to hold while crossing, in observation units (~42 units/s per
+# unit), so about twelve units a second. The ceiling is what is left of the
+# thrust budget after holding altitude: ask for much more and the vector tips so
+# far off vertical that the ship sinks while it travels.
+CRUISE_SPEED = 0.30
 
 
 def baseline_controller(obs: np.ndarray) -> np.ndarray:
-    """Proportional descent hold plus attitude levelling, in observation units.
+    """Fly to the planet's largest continent from anywhere, and land on it.
 
-    Everything here is expressed in the ship's own frame, which is what makes it
-    short: `up_local` is where the ground is from the ship's point of view, so
+    Everything is in the ship's own frame, which is what keeps it short:
+    `up_local` is where the ground is from the ship's point of view, so
     thrusting along it is thrusting away from the ground, and rotating it onto
     +Y is levelling out.
+
+    Two phases, chosen by how far the target still is:
+
+    **Cruise.** Hold a set altitude, kill sideways drift, and push along the
+    bearing to the continent. Holding altitude rather than descending is the
+    whole trick -- a ship that descends while it travels arrives low, slow and
+    over whatever happens to be underneath it, which is usually sea.
+
+    **Descend.** Once over the continent, hold a descent rate that tapers to a
+    crawl, keep the belly down, and refuse to go below a working altitude while
+    the ground underneath is still wet, so a coastal approach does not finish in
+    the surf.
+
+    The bearing is a great-circle heading to a fixed point, so this works from
+    anywhere on the sphere including the far side -- which the previous
+    gradient-following version could not do. That one walked to the *nearest*
+    coast and stalled in open ocean where the local gradient vanishes.
     """
     action = np.zeros((obs.shape[0], ACT_SIZE), dtype=np.float32)
 
     altitude = obs[:, ALT]
+    v_local = obs[:, V_LOCAL]
     up_local = obs[:, UP_LOCAL]
     v_up = obs[:, V_UP]
+    landness = obs[:, LANDNESS]
+    to_site = obs[:, TO_SITE]
+    site_angle = obs[:, SITE_ANGLE] * np.pi
 
-    # Descent rate tapers to near zero at the surface. Observations are scaled
-    # by orbital speed at the surface (~42 units/s), hence the small numbers.
-    desired = -0.036 - 0.09 * np.clip(altitude / 0.2, 0.0, 1.0)
-    lift = np.clip(15.0 * (desired - v_up), -1.0, 1.0)
+    # Readiness to descend, as a continuous quantity rather than a switch.
+    #
+    # Descending needs dry ground below *and* a target close enough that the
+    # ground can be assumed to belong to it. Either alone is not enough: dry
+    # ground far away is the wrong continent, and being close with water
+    # underneath is a bay.
+    #
+    # Written as a hard boolean this controller works fine and clones badly. A
+    # network fitted to it by least squares cannot reproduce a step, so it
+    # learns a smeared version and then half-commits -- descending over water
+    # sometimes, hovering over good ground other times. Making the expert itself
+    # smooth gives the regression something it can actually represent, and costs
+    # the controller nothing.
+    ready = (
+        np.clip((landness - SHORE_MARGIN) / 0.12, 0.0, 1.0)
+        * np.clip((ARRIVED_ANGLE - site_angle) / 0.25, 0.0, 1.0)
+    )
+    cruising = 1.0 - ready
+    wet = landness < SHORE_MARGIN
 
-    # Thrust along local up, expressed in the ship frame.
-    action[:, 0:3] = up_local * lift[:, None]
+    # --- vertical ---------------------------------------------------------
+    # Cruising holds CRUISE_ALT. Descending tapers toward the surface. The
+    # observation is scaled by orbital speed (~42 units/s), hence small numbers.
+    approach = -0.012 - 0.13 * np.clip(altitude / 0.20, 0.0, 1.0)
+    hold = np.clip(1.2 * (CRUISE_ALT - altitude), -0.10, 0.10)
+    desired = ready * approach + cruising * hold
+    # Gain high enough to saturate on the errors that matter. At 15 a three
+    # unit a second overshoot asked for only half thrust, which under the old
+    # thrust-to-weight ratio was academic and afterwards was just slack.
+    lift = np.clip(45.0 * (desired - v_up), -1.0, 1.0)
 
+    # --- horizontal -------------------------------------------------------
+    # A velocity controller, not a brake plus a shove. Those are the same thing
+    # when the wanted velocity is zero, and they fight each other when it is
+    # not: a braking term proportional to all horizontal velocity cancels the
+    # very speed the cruise is trying to build, and the ship sits still burning
+    # the clock. Asking for a *target* velocity makes both cases one expression.
+    v_horizontal = v_local - up_local * np.sum(v_local * up_local, axis=1)[:, None]
+
+    # Ease the target off as the continent is reached, so the ship arrives
+    # stopped rather than sailing past and having to come back.
+    closing = np.clip(site_angle / 0.30, 0.0, 1.0)
+    closing = np.where(wet, np.maximum(closing, WET_CLOSING_FLOOR), closing)
+    v_wanted = to_site * (CRUISE_SPEED * closing * cruising)[:, None]
+    lateral = np.clip(BRAKE_GAIN * (v_wanted - v_horizontal), -1.0, 1.0)
+
+    action[:, 0:3] = up_local * lift[:, None] + lateral
+
+    # --- attitude ---------------------------------------------------------
     # Rotate the ship's +Y onto up_local. The axis of that rotation is
     # (0,1,0) x up_local = (up_local.z, 0, -up_local.x), so its X component is
-    # pitch and its Z component is roll.
-    action[:, 3] = np.clip(2.0 * up_local[:, 2], -1.0, 1.0)
-    action[:, 5] = np.clip(-2.0 * up_local[:, 0], -1.0, 1.0)
-    return action
+    # pitch and its Z component is roll. The gain is high because a spawn can be
+    # tumbling and every tick spent sideways is a tick not descending.
+    action[:, 3] = np.clip(4.0 * up_local[:, 2], -1.0, 1.0)
+    action[:, 5] = np.clip(-4.0 * up_local[:, 0], -1.0, 1.0)
+    return np.clip(action, -1.0, 1.0)
 
 
 class PolicyController:
@@ -99,7 +198,7 @@ def main() -> None:
     parser.add_argument("--godot", required=True)
     parser.add_argument("--project", required=True)
     parser.add_argument("--controller", choices=["policy", "baseline", "zero"], default="policy")
-    parser.add_argument("--policy-path", default="rl/runs/landing/policy.json")
+    parser.add_argument("--policy-path", default=str(DEFAULT_POLICY))
     parser.add_argument("--episodes", type=int, default=200)
     parser.add_argument("--agents", type=int, default=32)
     parser.add_argument("--port", type=int, default=11040)

@@ -649,12 +649,32 @@ before PPO fine-tuning, 3.0% after, while the training reward rose throughout.
 
 **Two facts about this ship that the training surfaced.**
 
-Thrust is 10.0 units/s² and surface gravity is 9.81 — a thrust-to-weight ratio
-of **1.02**. A ship pointing straight up at full power decelerates at 0.19
-units/s², so it cannot arrest a fall by thrust alone in less than a planet
-radius. Flight assist's drag term is this ship's real landing system; it caps
-free fall near `g / 1.6 = 6.1` units/s. Landing with assist off is not hard, it
-is impossible.
+Thrust used to be 10.0 units/s² against a surface gravity of 9.81 — a
+thrust-to-weight ratio of **1.02**. Flight assist deliberately leaves the axis
+you are thrusting along undamped, so a ship braking its own descent got thrust
+minus gravity and nothing else: 0.19 units/s², which needs 31 seconds and ninety
+units of altitude to shed a six-units-a-second fall. The ship had no way to
+stop. It is now 18.0, a ratio of about 1.83, and the hand-written controller
+lands 99.3% of the time at 1.04 units/s.
+
+Flight assist still matters — it caps free fall near `g / 1.6 = 6.1` units/s,
+three times the touchdown gate — but the ship no longer depends on it to stop.
+
+**The landing rate was counting splashdowns.** The planets had almost no dry
+land (2.7%, 9.8%, 4.5%), the environment had no notion of water, and water is
+soft: `_water_drag` is 3.0 against the assist's 1.6, plus buoyancy. A ship that
+hit the sea was braked below the 2.0 units/s gate before reaching the seabed and
+scored as a clean landing. Measured after the fact, the old controller on the
+old planets ended **85.6% of episodes in water**. `LandingEnv` now classifies
+that as `DITCHED`, observes the land field, and spawns mostly over ground.
+
+`continent_frequency` reads as *features per planet*, so setting it to 100
+asked for a hundred continents on one sphere. That is not terrain, it is static,
+and it measured 51 and 40 degrees of mean ground slope on Planets 2 and 3. Back
+at 0.95-1.5 it makes continents again and the mean slope is 5-7 degrees.
+`rl/terrain_report.tscn` prints land fraction, largest connected landmass,
+relief and slope for every planet, which is how those numbers were arrived at
+rather than guessed.
 
 The ship rests on its struts about 1.4 units above the analytic surface. The
 training environment has no colliders and ends an episode at altitude zero, so

@@ -19,6 +19,7 @@ value function needs it to bootstrap correctly across a time-limit cut.
 from __future__ import annotations
 
 import json
+import math
 import socket
 import subprocess
 import time
@@ -26,16 +27,18 @@ from pathlib import Path
 
 import numpy as np
 
-OBS_SIZE = 14
+OBS_SIZE = 19
 ACT_SIZE = 6
 
 # Mirrors the outcome constants in rl/landing_env.gd.
-RUNNING, LANDED, CRASHED, ESCAPED, TIMEOUT = range(5)
+RUNNING, LANDED, CRASHED, ESCAPED, TIMEOUT, DITCHED, MISSED = range(7)
 OUTCOME_NAMES = {
     LANDED: "landed",
     CRASHED: "crashed",
     ESCAPED: "escaped",
     TIMEOUT: "timeout",
+    DITCHED: "ditched",
+    MISSED: "missed",
 }
 
 
@@ -51,27 +54,43 @@ class GodotVecEnv:
         launch: bool = True,
         verbose: bool = False,
         step_timeout: float = 30.0,
+        render: bool = False,
+        render_rate: int = 180,
     ) -> None:
         self.num_agents = num_agents
         self.obs_size = OBS_SIZE
         self.act_size = ACT_SIZE
         self._process: subprocess.Popen | None = None
+        self._hud: dict | None = None
 
         if launch:
-            command = [
-                str(godot_bin),
-                "--headless",
-                # Without --fixed-fps the engine sleeps to hit real time, and
-                # training crawls at 60 steps a second regardless of the CPU.
-                "--fixed-fps",
-                str(fixed_fps),
-                "--path",
-                str(project),
-                "res://rl/train.tscn",
+            command = [str(godot_bin)]
+            if render:
+                # A window, and no --fixed-fps: that flag makes the engine run
+                # the main loop flat out, which off screen is the whole point
+                # and on screen is an unreadable blur. Pace is set instead by
+                # Engine.physics_ticks_per_second on the Godot side, which
+                # speeds up the run without altering the step.
+                command += ["--path", str(project), "res://rl/train.tscn"]
+            else:
+                command += [
+                    "--headless",
+                    # Without --fixed-fps the engine sleeps to hit real time,
+                    # and training crawls at 60 steps a second regardless of
+                    # how fast the CPU is.
+                    "--fixed-fps",
+                    str(fixed_fps),
+                    "--path",
+                    str(project),
+                    "res://rl/train.tscn",
+                ]
+            command += [
                 "--",
                 f"--agents={num_agents}",
                 f"--port={port}",
                 f"--seed={seed}",
+                f"--render={1 if render else 0}",
+                f"--rate={render_rate}",
             ]
             self._process = subprocess.Popen(
                 command,
@@ -131,7 +150,12 @@ class GodotVecEnv:
         return json.loads(line)
 
     def _send(self, payload: dict) -> None:
-        self._sock.sendall((json.dumps(payload, separators=(",", ":")) + "\n").encode())
+        # allow_nan=False so a non-finite value raises here instead of going out
+        # as a bare NaN. That is valid Python and invalid JSON, and Godot answers
+        # an unparseable message by hanging up — which surfaces over here as
+        # "Godot closed the connection" some frames later, pointing at nothing.
+        line = json.dumps(payload, separators=(",", ":"), allow_nan=False)
+        self._sock.sendall((line + "\n").encode())
 
     @staticmethod
     def _unpack(message: dict) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict]:
@@ -160,10 +184,33 @@ class GodotVecEnv:
         obs, _, _, _, _ = self._unpack(self._read_message())
         return obs
 
+    def set_hud(self, **stats) -> None:
+        """Stage a line of text for the on-screen readout.
+
+        Sent with the next action message and dropped by a headless engine, so
+        the trainer can call this unconditionally and never branch on whether
+        anyone is watching.
+
+        Non-finite values are dropped rather than sent. ``json.dumps`` writes a
+        bare ``NaN``, which is valid Python and invalid JSON, and Godot responds
+        to an unparseable message by closing the connection — so a mean return
+        over an empty window, which is exactly what iteration one has, would
+        take down the run. A cosmetic field must not be able to do that.
+        """
+        self._hud = {
+            key: value
+            for key, value in stats.items()
+            if not (isinstance(value, float) and not math.isfinite(value))
+        }
+
     def step(self, actions: np.ndarray):
         actions = np.clip(np.asarray(actions, dtype=np.float32), -1.0, 1.0)
         assert actions.shape == (self.num_agents, ACT_SIZE), actions.shape
-        self._send({"act": actions.tolist()})
+        message: dict = {"act": actions.tolist()}
+        if self._hud is not None:
+            message["hud"] = self._hud
+            self._hud = None
+        self._send(message)
         return self._unpack(self._read_message())
 
     def close(self) -> None:

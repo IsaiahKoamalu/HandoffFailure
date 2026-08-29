@@ -20,19 +20,25 @@ from evaluate import PolicyController
 
 PROBES = np.array(
     [
-        [0.20, 0.90, 0.10, -0.30, 0.05, 0.10, 0.95, -0.20, -0.15, 0.08, 1.00, 0.50, 0.30, 0.00],
-        [0.02, 0.35, -0.05, 0.02, 0.01, -0.02, 0.99, 0.05, -0.03, 0.01, 1.00, 0.90, 0.80, 0.00],
-        [1.20, 1.00, 0.40, -0.10, -0.25, 0.30, 0.70, 0.60, -0.40, 0.35, 0.55, 0.10, 0.05, 0.00],
+        [0.20, 0.90, 0.10, -0.30, 0.05, 0.10, 0.95, -0.20, -0.15, 0.08, 1.00, 0.50, 0.30, 0.00, 0.62, 0.10, 0.05, 0.99, 0.35],
+        [0.02, 0.35, -0.05, 0.02, 0.01, -0.02, 0.99, 0.05, -0.03, 0.01, 1.00, 0.90, 0.80, 0.00, -0.80, -0.60, 0.20, 0.77, 0.82],
+        [1.20, 1.00, 0.40, -0.10, -0.25, 0.30, 0.70, 0.60, -0.40, 0.35, 0.55, 0.10, 0.05, 0.00, 0.00, 0.00, 0.00, 0.00, 0.10],
     ],
     dtype=np.float32,
 )
 
 
+# Anchored to this file rather than the working directory. Every documented
+# invocation is from python/, so a bare relative path quietly resolved to a
+# stray python/rl/ instead of the real run directory -- and loaded an old
+# policy rather than reporting that it could not find the new one.
+DEFAULT_POLICY = Path(__file__).resolve().parent.parent / "rl/runs/landing/policy.json"
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--godot", required=True)
     parser.add_argument("--project", required=True)
-    parser.add_argument("--policy-path", default="rl/runs/landing/policy.json")
+    parser.add_argument("--policy-path", default=str(DEFAULT_POLICY))
     parser.add_argument("--tolerance", type=float, default=2e-4)
     args = parser.parse_args()
 

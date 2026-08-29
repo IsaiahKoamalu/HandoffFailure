@@ -12,11 +12,23 @@ class_name ShipAutopilot
 ## It engages only with a planet under you. In deep space there is no surface to
 ## land on, no altitude, and no local up, so the observation would be undefined
 ## and the policy would be extrapolating off the end of everything it has seen.
+##
+## Within a planet's influence it is meant to work from anywhere: any altitude
+## out to three radii, any attitude including tumbling, and carrying orbital
+## velocity. It flies to that planet's largest continent and lands there. That
+## breadth is a property of the training distribution rather than of this file —
+## see LandingEnv.spawn_alt_max, spawn_orbit_fraction and spawn_tumble_fraction,
+## which exist to make sure the policy has actually seen what it is now asked to
+## survive.
 
 ## Ticks after which the autopilot gives up and hands back control. Matches
 ## LandingEnv.max_steps: the policy has an episode-progress input, so running it
 ## far past the horizon it trained on is feeding it a number it never saw.
-const MAX_TICKS: int = 1500
+##
+## 150 seconds, because the job is no longer "land from just above the pad". It
+## is "get to the largest continent from wherever you are and land on it", and
+## crossing half a planet at the ship's cruise speed is a minute on its own.
+const MAX_TICKS: int = 9000
 
 ## How far the ship's origin sits above the ground when it is resting on its
 ## struts, plus margin.

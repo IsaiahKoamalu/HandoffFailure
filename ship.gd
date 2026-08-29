@@ -74,7 +74,16 @@ class_name Ship
 ## mouse path has no equivalent because a mouse delta is already an angle.
 @export var _stick_rate: float = 90.0
 ## Thrust as an acceleration, so handling does not change with the ship's mass.
-@export var _thrust: float = 10.0
+##
+## Surface gravity on these planets is 9.81, so this is a thrust-to-weight ratio
+## of about 1.8. It used to be 10.0 -- a ratio of 1.02 -- and that number could
+## not survive contact with a landing. Flight assist deliberately stops damping
+## whichever axis you are thrusting along, so a ship braking its descent gets
+## thrust minus gravity and nothing else: 0.19 units/s^2, which needs half a
+## minute and ninety units of altitude to wash off a six-unit-a-second fall. The
+## ship had no way to stop, and the only reason landings ever appeared to work
+## was that it was coming down in the sea, where water drag did the braking.
+@export var _thrust: float = 18.0
 @export var _auto_orient_speed: float = 2.0
 ## Speed relative to the ground below which a landed ship parks itself.
 @export var _landing_speed: float = 0.2
@@ -111,6 +120,12 @@ var command_turn: Vector3 = Vector3.ZERO
 ## enters the tree. Training runs many ships at once and none of them are looked
 ## at, so all of that is pure cost.
 var headless_agent: bool = false
+## Build the exhaust plumes on a headless agent anyway. Only set when someone
+## is actually watching training: the plume is the clearest read on what a
+## policy is doing with the throttle, and it is the one piece of the player's
+## presentation worth paying for sixteen times over. Audio, the camera and
+## terrain streaming stay off.
+var agent_visuals: bool = false
 
 ## Trained landing autopilot. Null in a checkout with no policy file.
 var autopilot: ShipAutopilot = null
@@ -138,7 +153,10 @@ func _ready() -> void:
 	_ramp.rotation.x = deg_to_rad(_ramp_degrees)
 	if headless_agent:
 		# Terrain collision is replaced by analytic ground in training; see
-		# rl/landing_env.gd. Nothing here is rendered or heard.
+		# rl/landing_env.gd. Nothing here is heard, and normally nothing is
+		# rendered either.
+		if agent_visuals:
+			_build_thrusters()
 		return
 	_build_thrusters()
 	_build_engine_audio()
@@ -202,7 +220,7 @@ func _physics_process(delta: float) -> void:
 		apply_central_force(_thrust * mass * movement.normalized() * throttle * authority)
 
 	_process_flight_assist(dominant, movement)
-	if not headless_agent:
+	if not headless_agent or agent_visuals:
 		_process_thrusters(movement)
 
 	_process_auto_orientation(delta)
