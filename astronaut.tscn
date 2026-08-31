@@ -18,6 +18,8 @@ radius = 0.35
 height = 1.8
 
 [node name="Astronaut" type="CharacterBody3D" node_paths=PackedStringArray("_camera", "_camera_pivot", "_interact_probe", "_headlamp")]
+collision_layer = 16
+collision_mask = 9
 floor_max_angle = 0.8726646
 floor_snap_length = 0.5
 platform_on_leave = 2

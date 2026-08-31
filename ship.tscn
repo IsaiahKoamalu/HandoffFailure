@@ -73,6 +73,8 @@ radius = 1.8
 [sub_resource type="CapsuleMesh" id="CapsuleMesh_7rpyo"]
 
 [node name="Ship" type="RigidBody3D" unique_id=1341798101 node_paths=PackedStringArray("_camera", "_camera_pivot", "_ground_cast", "_exit_point", "_ramp", "_cockpit", "_cockpit_light_switch", "_cabin_light", "_headlight")]
+collision_layer = 2
+collision_mask = 3
 mass = 200.0
 script = ExtResource("1_ship")
 _camera = NodePath("CameraPivot/Camera3D")
@@ -162,6 +164,8 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.45, -1.9)
 mesh = SubResource("Mesh_seat")
 
 [node name="Ramp" type="AnimatableBody3D" parent="." unique_id=286105755]
+collision_layer = 8
+collision_mask = 0
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 2.6)
 sync_to_physics = false
 
@@ -187,6 +191,7 @@ spot_range = 60.0
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0.6)
 
 [node name="GroundCast" type="RayCast3D" parent="." unique_id=56818317]
+collision_mask = 1
 target_position = Vector3(0, -1.6, 0)
 
 [node name="Cockpit" type="Area3D" parent="." unique_id=107804657]

@@ -6,6 +6,13 @@ class_name Ship
 ## The cabin is a frame of reference for the Astronaut in the same way a Planet
 ## is: while inside, the astronaut is reparented here and rides the ship's
 ## motion for free. See `contains_point` and `get_surface_velocity`.
+##
+## The astronaut never touches this body -- see `_build_deck`.
+
+## Collision layers, mirroring the names in project.godot.
+const LAYER_WORLD: int = 1 << 0
+const LAYER_SHIP: int = 1 << 1
+const LAYER_DECK: int = 1 << 3
 
 @export_category("Nodes")
 @export var _camera: Camera3D
@@ -40,6 +47,26 @@ class_name Ship
 ## Distance from the hinge to the lip, used to probe for ground.
 @export var _ramp_length: float = 3.2
 
+@export_category("Fuel")
+## Seconds of continuous full thrust the tanks hold. Zero or less is unlimited,
+## which is what the player flies with unless something says otherwise -- so
+## this changes nothing about the game until it is deliberately turned on.
+##
+## Landing is a task a proportional law already solves well, which is why a
+## learned policy has only ever managed to match the hand-written one. A budget
+## is what makes the problem worth learning: it turns a control task into a
+## constrained optimisation over the whole flight, where crossing early and
+## coasting beats holding a fixed cruise speed, and there is no obvious law to
+## write down.
+@export var fuel_seconds: float = 0.0
+
+## Fuel left, in seconds of full thrust. Meaningless when fuel_seconds <= 0.
+var fuel: float = 0.0
+## Whether the tanks are finite at all. Cached because it is read every tick.
+var has_fuel_limit: bool = false
+## Dry, with a limit in force. The engines are dead; gravity is not.
+var is_out_of_fuel: bool = false
+
 @export_category("Water")
 ## Upward force underwater as a multiple of local gravity. Above 1.0 the ship
 ## surfaces; below 1.0 it settles onto the seabed.
@@ -62,6 +89,12 @@ class_name Ship
 ## Seconds after you stop steering before auto-levelling resumes. Without this
 ## the assist fights every input you make.
 @export_range(0.0, 3.0, 0.05) var _level_delay: float = 0.6
+## How far the pilot can pitch the camera while parked, in degrees either way.
+## Short of 90 so the view never rolls over the top.
+@export_range(10.0, 89.0, 1.0) var _free_look_pitch: float = 80.0
+## Degrees per second the camera swings back to face forward once the ship is
+## flying again. Fast enough not to be a wait, slow enough not to be a jump.
+@export_range(30.0, 720.0, 10.0) var _free_look_recentre: float = 240.0
 ## Seconds for the engines to spool from idle to full.
 @export_range(0.0, 3.0, 0.05) var _throttle_response: float = 0.3
 ## How hard flight assist cancels drift you did not ask for, as a multiple of
@@ -127,6 +160,23 @@ var headless_agent: bool = false
 ## terrain streaming stay off.
 var agent_visuals: bool = false
 
+## Fill the tanks, and settle whether there are any. Called on spawn and by the
+## trainer on every episode reset.
+func refuel() -> void:
+	has_fuel_limit = fuel_seconds > 0.0
+	fuel = fuel_seconds if has_fuel_limit else 0.0
+	is_out_of_fuel = false
+
+
+## Fuel left as a fraction of capacity, and 1.0 when the tanks are unlimited --
+## so the observation reads "plenty" rather than "empty" for a ship that has no
+## budget to worry about.
+func fuel_fraction() -> float:
+	if not has_fuel_limit:
+		return 1.0
+	return clampf(fuel / fuel_seconds, 0.0, 1.0)
+
+
 ## Trained landing autopilot. Null in a checkout with no policy file.
 var autopilot: ShipAutopilot = null
 
@@ -136,6 +186,8 @@ var _engine_audio: EngineAudio = null
 
 ## Rotation the mouse has asked for but the ship has not yet made, in degrees.
 var _pending_turn: Vector2 = Vector2.ZERO
+## Where the pilot has aimed the camera while parked, in degrees: x pitch, y yaw.
+var _free_look: Vector2 = Vector2.ZERO
 ## Seconds since the pilot last steered. Auto-levelling waits this out.
 var _since_steer: float = 999.0
 
@@ -151,6 +203,7 @@ func _ready() -> void:
 	add_collision_exception_with(_ramp)
 	_ramp_degrees = _ramp_closed_degrees
 	_ramp.rotation.x = deg_to_rad(_ramp_degrees)
+	refuel()
 	if headless_agent:
 		# Terrain collision is replaced by analytic ground in training; see
 		# rl/landing_env.gd. Nothing here is heard, and normally nothing is
@@ -158,6 +211,7 @@ func _ready() -> void:
 		if agent_visuals:
 			_build_thrusters()
 		return
+	_build_deck()
 	_build_thrusters()
 	_build_engine_audio()
 	autopilot = ShipAutopilot.new(self)
@@ -217,13 +271,26 @@ func _physics_process(delta: float) -> void:
 		# time. Measured: 39.7% landings before fine-tuning, 3.0% after, while
 		# the training reward went *up* the whole time.
 		var authority: float = minf(movement.length(), 1.0) if external_control else 1.0
-		apply_central_force(_thrust * mass * movement.normalized() * throttle * authority)
+		# Burn first, then thrust with what was actually available. Charging for
+		# the whole tick and firing anyway would let a policy spend its last
+		# gram twice.
+		if has_fuel_limit:
+			var wanted: float = throttle * authority * delta
+			var burned: float = minf(fuel, wanted)
+			fuel -= burned
+			is_out_of_fuel = fuel <= 0.0
+			authority *= (burned / wanted) if wanted > 0.0 else 0.0
+		if authority > 0.0:
+			apply_central_force(
+				_thrust * mass * movement.normalized() * throttle * authority
+			)
 
 	_process_flight_assist(dominant, movement)
 	if not headless_agent or agent_visuals:
 		_process_thrusters(movement)
 
 	_process_auto_orientation(delta)
+	_process_camera_recentre(delta)
 	_process_ramp(delta)
 
 	_mouse_delta = Vector2.ZERO
@@ -257,6 +324,49 @@ func _unhandled_input(event: InputEvent) -> void:
 ## Only the main drive is modelled. RCS jets for each of the six thrust
 ## directions would be more honest, but the rear plume is the one you actually
 ## look at, and it carries almost all of the feedback.
+## Give the astronaut a deck to stand on that is not this rigid body.
+##
+## A CharacterBody3D is kinematic, which the solver reads as infinite mass:
+## whatever rigid thing it leans on gets moved, and it feels no reaction. While
+## the hull was part of this body, an astronaut braced against a planet could
+## walk into a parked ship and drive it across the landscape -- measured at 3.5
+## units/s and 15.9 units of ground covered in fifteen seconds of walking, from
+## a standing start, against 200 kg of spacecraft.
+##
+## Inside the cabin this never showed, which is what made it easy to miss: in
+## there the astronaut is riding the ship, so it is pushing the very floor it
+## is braced against and the two cancel. It needs the planet under its feet.
+##
+## The astronaut's collision mask now excludes the hull entirely, and this hangs
+## a kinematic twin of the hull's shapes off it to stand on instead. A kinematic
+## body cannot be pushed, so the ship stays where it was parked and the
+## astronaut still cannot walk through it. The twin reuses the same Shape3D
+## resources rather than copying them, so it cannot drift out of step with the
+## hull it mirrors.
+##
+## What is being thrown away is the astronaut's ability to move the ship at all,
+## which is the right trade: the engine offers infinite mass or nothing, and of
+## those two, a ship whose landing gear is planted is much the closer to right.
+func _build_deck() -> void:
+	var deck := AnimatableBody3D.new()
+	deck.name = "Deck"
+	# Carried by this node's transform as its parent, not animated in its own
+	# right, and the astronaut rides the cabin by reparenting rather than through
+	# Godot's moving-platform handling. Neither path needs the sync.
+	deck.sync_to_physics = false
+	deck.collision_layer = LAYER_DECK
+	deck.collision_mask = 0
+	for child in get_children():
+		var shape := child as CollisionShape3D
+		if shape == null or shape.disabled:
+			continue
+		var twin := CollisionShape3D.new()
+		twin.shape = shape.shape
+		twin.transform = shape.transform
+		deck.add_child(twin)
+	add_child(deck)
+
+
 func _build_thrusters() -> void:
 	var process := ParticleProcessMaterial.new()
 	process.direction = Vector3(0.0, 0.0, 1.0)
@@ -461,6 +571,9 @@ func _ramp_lip_on_ground() -> bool:
 	var lip: Vector3 = _ramp.global_transform * Vector3(0.0, 0.0, _ramp_length)
 	var up: Vector3 = global_basis.y
 	var query := PhysicsRayQueryParameters3D.create(lip + up * 0.1, lip - up * 0.15)
+	# Ground, and only ground. The deck twin sits exactly where the hull is, so
+	# without this the ramp would find itself and never lower.
+	query.collision_mask = LAYER_WORLD
 	query.exclude = [get_rid(), _ramp.get_rid()]
 	return not get_world_3d().direct_space_state.intersect_ray(query).is_empty()
 
@@ -590,6 +703,21 @@ func _process_look_inputs(delta: float) -> void:
 	var dx: float = _mouse_delta.y * _mouse_sensitivity
 	var dy: float = -_mouse_delta.x * _mouse_sensitivity
 
+	# Parked, the mouse looks around instead of flying. A ship sitting on its
+	# struts that yaws to follow the mouse is not heavy, it is a turntable --
+	# and it was a full 360 degrees of it, because nothing in the turn path
+	# cared whether the ship was on the ground. Worse, pivoting the hull grinds
+	# it into the terrain, and the ejection that follows is enough to push the
+	# ship past the parking speed and set it drifting.
+	#
+	# The pilot still needs to look around a landing site, so the pan moves to
+	# the camera. Un-parking hands the mouse straight back to the hull; see the
+	# recentre in _process_camera_recentre.
+	if _is_parked:
+		_free_look.x = clampf(_free_look.x - dx, -_free_look_pitch, _free_look_pitch)
+		_free_look.y = wrapf(_free_look.y + dy, -180.0, 180.0)
+		return
+
 	if Input.is_action_pressed("rotate"):
 		rotate(_camera_pivot.global_transform.basis.z, deg_to_rad(dy))
 		return
@@ -607,6 +735,21 @@ func _process_look_inputs(delta: float) -> void:
 	# around. The camera is rigid now and the mouse flies the ship.
 	rotate_object_local(Vector3.UP, deg_to_rad(caught.y))
 	rotate_object_local(Vector3.RIGHT, deg_to_rad(-caught.x))
+
+
+# Push the free-look aim onto the camera, and wind it back to straight ahead
+# once the ship is flying, so the mouse and the view agree again the moment the
+# hull starts answering to it.
+func _process_camera_recentre(delta: float) -> void:
+	if headless_agent:
+		return
+	if not _is_parked and _free_look != Vector2.ZERO:
+		var step: float = _free_look_recentre * delta
+		_free_look.x = move_toward(_free_look.x, 0.0, step)
+		_free_look.y = move_toward(_free_look.y, 0.0, step)
+	_camera_pivot.rotation = Vector3(
+		deg_to_rad(_free_look.x), deg_to_rad(_free_look.y), 0.0
+	)
 
 
 # Keep the wings level without taking the nose off where the pilot pointed it.

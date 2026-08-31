@@ -112,6 +112,15 @@ map={
 ]
 }
 
+[layer_names]
+
+3d_physics/layer_1="world"
+3d_physics/layer_2="ship"
+3d_physics/layer_3="interactable"
+3d_physics/layer_4="deck"
+3d_physics/layer_5="character"
+3d_physics/layer_10="training agent"
+
 [physics]
 
 3d/default_gravity=0.0
