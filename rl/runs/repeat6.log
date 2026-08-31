@@ -1,0 +1,23 @@
+cloning the baseline controller for 3000 ticks
+  round 1/4  96,000 samples  mse 0.02236
+  round 2/4  192,000 samples  mse 0.01601
+  round 3/4  288,000 samples  mse 0.00944
+  round 4/4  384,000 samples  mse 0.00668
+warm start: action sigma set to 0.080
+iter    1/73  step     8,192  return    71.52  len    158  land 80.0%  crash  0.0%  ditch  0.0%  miss  0.0%  1,643 sps
+iter    5/73  step    40,960  return    97.23  len    393  land 82.6%  crash  1.4%  ditch  0.0%  miss  0.0%  1,659 sps
+iter   10/73  step    81,920  return   117.62  len    506  land 86.5%  crash  1.3%  ditch  0.0%  miss  0.0%  1,725 sps
+iter   15/73  step   122,880  return   126.68  len    485  land 89.0%  crash  1.5%  ditch  0.0%  miss  0.0%  1,754 sps
+iter   20/73  step   163,840  return   128.14  len    492  land 91.5%  crash  2.0%  ditch  0.0%  miss  0.0%  1,779 sps
+iter   25/73  step   204,800  return   122.88  len    470  land 91.0%  crash  2.0%  ditch  0.0%  miss  0.0%  1,804 sps
+iter   30/73  step   245,760  return   120.18  len    446  land 90.5%  crash  3.0%  ditch  0.5%  miss  0.0%  1,806 sps
+iter   35/73  step   286,720  return   117.12  len    502  land 87.5%  crash  4.0%  ditch  1.0%  miss  0.0%  1,811 sps
+iter   40/73  step   327,680  return   106.27  len    519  land 84.5%  crash  4.5%  ditch  0.5%  miss  0.0%  1,721 sps
+iter   45/73  step   368,640  return   122.33  len    465  land 82.0%  crash  7.0%  ditch  1.0%  miss  0.0%  1,728 sps
+iter   50/73  step   409,600  return   118.54  len    454  land 81.5%  crash  8.0%  ditch  2.0%  miss  0.0%  1,704 sps
+iter   55/73  step   450,560  return   111.65  len    512  land 78.0%  crash  9.0%  ditch  2.5%  miss  0.5%  1,697 sps
+iter   60/73  step   491,520  return   106.42  len    550  land 78.0%  crash  7.5%  ditch  2.5%  miss  0.5%  1,691 sps
+iter   65/73  step   532,480  return   118.42  len    483  land 79.0%  crash  7.0%  ditch  3.0%  miss  0.0%  1,705 sps
+iter   70/73  step   573,440  return   129.65  len    436  land 83.0%  crash  8.0%  ditch  2.5%  miss  0.0%  1,719 sps
+
+wrote ..\rl\runs\repeat6\policy.json and ..\rl\runs\repeat6\progress.csv

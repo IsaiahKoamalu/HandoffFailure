@@ -10,6 +10,10 @@ returns the first observation batch and ``step(actions)`` returns
 ``(obs, reward, terminated, truncated, info)``. It is not an actual
 ``VectorEnv`` subclass because there is nothing to gain from the dependency.
 
+One ``step()`` is one *decision*. With ``repeat > 1`` the engine holds that
+action for several physics ticks and sums the rewards, so a step covers more
+simulated time without the trainer seeing any more transitions.
+
 Autoreset happens on the Godot side. When an episode ends, the observation
 returned for that agent is already the first frame of its next episode, and the
 final frame of the one that ended is handed back in ``info["final_obs"]`` — the
@@ -27,7 +31,7 @@ from pathlib import Path
 
 import numpy as np
 
-OBS_SIZE = 19
+OBS_SIZE = 20
 ACT_SIZE = 6
 
 # Mirrors the outcome constants in rl/landing_env.gd.
@@ -56,8 +60,15 @@ class GodotVecEnv:
         step_timeout: float = 30.0,
         render: bool = False,
         render_rate: int = 180,
+        repeat: int = 1,
+        fuel_seconds: float = 0.0,
+        max_steps: int = 0,
     ) -> None:
         self.num_agents = num_agents
+        # Physics ticks each action is held for. One `step()` here is one
+        # decision, which is `repeat` ticks of simulation with the rewards
+        # summed. See the note on `repeat` in rl/train_host.gd.
+        self.repeat = repeat
         self.obs_size = OBS_SIZE
         self.act_size = ACT_SIZE
         self._process: subprocess.Popen | None = None
@@ -91,6 +102,9 @@ class GodotVecEnv:
                 f"--seed={seed}",
                 f"--render={1 if render else 0}",
                 f"--rate={render_rate}",
+                f"--repeat={repeat}",
+                f"--fuel={fuel_seconds}",
+                f"--max-steps={max_steps}",
             ]
             self._process = subprocess.Popen(
                 command,

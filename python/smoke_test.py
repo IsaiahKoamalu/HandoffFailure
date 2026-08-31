@@ -21,6 +21,8 @@ def main() -> None:
     parser.add_argument("--godot", required=True)
     parser.add_argument("--project", required=True)
     parser.add_argument("--agents", type=int, default=16)
+    parser.add_argument("--repeat", type=int, default=1)
+    parser.add_argument("--fuel", type=float, default=0.0)
     parser.add_argument("--ticks", type=int, default=1500)
     parser.add_argument("--port", type=int, default=11008)
     parser.add_argument("--verbose", action="store_true")
@@ -32,7 +34,9 @@ def main() -> None:
     finished: list[float] = []
 
     with GodotVecEnv(
-        args.godot, args.project, num_agents=args.agents, port=args.port, verbose=args.verbose
+        args.godot, args.project, num_agents=args.agents, port=args.port, verbose=args.verbose,
+        repeat=args.repeat,
+        fuel_seconds=args.fuel,
     ) as env:
         obs = env.reset()
         print(f"obs batch {obs.shape}, first row:\n  {np.round(obs[0], 3)}")

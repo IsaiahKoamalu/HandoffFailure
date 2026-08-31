@@ -10,8 +10,8 @@ engine spool, auto-levelling — is the shipping code. A policy trained against 
 simplified copy of the ship would be a policy that cannot fly the real one.
 
 ```
-python/ppo.py  <--- JSON over TCP, one exchange per physics tick --->  rl/train.tscn
-   torch                                                         32 ships, 1 solar system
+python/ppo.py  <--- JSON over TCP, one exchange per decision --->  rl/train.tscn
+   torch                                                    32 ships, 1 solar system
 ```
 
 ## Layout
@@ -60,8 +60,10 @@ cd python
 python smoke_test.py --godot /path/to/Godot_v4.7.2-stable_win64.exe --project ..
 ```
 
-Expect roughly 8,000 steps/second with 32 agents, and a random policy that
-crashes essentially every episode.
+Expect roughly 2,300 transitions/second with 16 agents at one decision per
+tick, and a random policy that crashes essentially every episode. With
+`--repeat 6` that falls to about 470 transitions/second, but each one covers six
+physics ticks, so the engine is doing slightly more work per second, not less.
 
 Train:
 
@@ -91,8 +93,7 @@ the default, and `,`/`.` move it between 60 and 960 while the run is going. The
 step stays 1/60 of a simulated second whatever it is set to, so **this changes
 the speed of playback and not the physics** — a rendered run and a headless run
 from the same seed produce the same trajectories and the same gradients. It
-costs throughput and nothing else: about 2,700 steps/second against 5,700
-headless on this machine.
+costs throughput and nothing else.
 
 Worth doing at least once. A learning curve is a lossy summary of a policy —
 "mean return 61.6" does not tell you that the ship is arriving level but braking
@@ -101,6 +102,39 @@ third of the batch is tumbling. The batch strip is what makes the hover obvious:
 a policy that has learned to land and one that has learned to wait look the same
 through the chase camera for the first ten seconds and completely different as
 sixteen altitude bars that stop going down.
+
+### Decision rate
+
+`--repeat N` holds each action for N physics ticks and exchanges once per hold,
+summing the rewards in between. The ship is *simulated* at 60 Hz throughout;
+only the rate at which it is *steered* changes.
+
+This is not a performance knob, it is the discount horizon. At gamma 0.997 the
+agent sees `1/(1-gamma) = 333` decisions ahead. At one decision per tick that is
+5.6 seconds against episodes running 18 to 54 — so the +120 landing bonus
+reaches the start of an episode discounted to `120 * 0.997^2000 = 0.3` reward,
+while shaping is worth ~39 over the same episode and is paid densely and early.
+The agent was never weighing 39 against 120; it was weighing 39 against 0.3, and
+could not see the landing at all. `--repeat 6` puts a whole episode inside the
+horizon.
+
+The cost is close to nothing: the hand-written controller lands 92.5% of the
+time deciding at 10 Hz against 93.0% at 60 Hz. It is a proportional law, and
+proportional laws do not need sixty corrections a second.
+
+A policy records what it was trained at (`"repeat"` in `policy.json`) and
+`ShipAutopilot` holds actions to match, so a 10 Hz policy is not silently driven
+at 60 Hz in game.
+
+### Warm starts
+
+Cloning leaves a near-deterministic policy and PPO then samples around it with
+whatever `log_std` holds — by default `exp(-1) = 0.37`, against actions bounded
+to [-1, 1]. That is noise of the same order as the commands themselves, which
+does not explore *around* a precision landing so much as replace it, and the
+first update then learns from the wreckage. `--warm-std 0.08` is the fix.
+`--critic-warmup 15` helps too, for the same underlying reason: a cloned actor
+arrives competent and the critic arrives random.
 
 Score the result against both baselines:
 
@@ -114,7 +148,7 @@ Then fly it: get in the ship, get near a planet, press `[P]`.
 
 ## The task
 
-**Observation** (19 floats, `LandingEnv.build_observation`) — everything is
+**Observation** (20 floats, `LandingEnv.build_observation`) — everything is
 relative to the surface being landed on and expressed in the ship's own frame,
 so one policy generalises across planets, orbits and headings:
 
@@ -132,6 +166,7 @@ so one policy generalises across planets, orbits and headings:
 | `14` | landness: >0 over dry ground, <0 over sea, 0 at the coastline |
 | `15–17` | great-circle heading to the target continent, ship-local axes |
 | `18` | angle to the target continent, over pi |
+| `19` | fuel remaining as a fraction of the tank, 1.0 when unlimited |
 
 Channels 14–18 are what make the task learnable at all. Without them an ocean
 and a plain are identical in every other channel, so no policy over them can
@@ -152,7 +187,8 @@ axes. Exactly the control set the player has.
 belly-down alignment and being over land, plus a graded touchdown bonus up to
 120. Touching down at sea, or going under, is a flat -30 and no bonus at all.
 An episode ends at touchdown, on submersion, on leaving the sphere of
-influence, or after 1,500 ticks.
+influence, or after `max_steps` ticks — 27,000, which is 450 simulated seconds.
+That number is not a detail; see **The time limit was setting the score** below.
 
 **Outcomes** — `landed`, `crashed`, `ditched`, `missed`, `escaped`, `timeout`.
 Ditching and missing are tracked apart from crashing because they are different
@@ -175,6 +211,43 @@ terminal landing rare: most episodes would be spent crossing, and the few ticks
 that actually decide a touchdown would be swamped.
 
 ## Things that were true and inconvenient
+
+**The time limit was setting the score.** `max_steps` was 9,000 ticks — 150
+seconds. Tripling it took the hand-written controller from **92.5% to 99.0%**
+and its timeouts from 6.5% to zero. Every one of those thirteen episodes became
+a landing and not one became a crash or a ditch: they were far-side starts that
+needed longer than 150 seconds to cross the planet, cut off in level flight.
+
+Three separate PPO runs had all plateaued at exactly 92%, which read as a
+control ceiling and was in fact the clock. Nobody was failing to land, they were
+failing to arrive before the buzzer, and roughly seven points of the benchmark
+were unreachable for reasons that had nothing to do with control. Any comparison
+between controllers measured under that limit was partly a comparison of who ran
+out of clock.
+
+The general form: **an environment constant that truncates episodes is part of
+the metric, not part of the scenery.** If a controller's failures are dominated
+by one outcome class, vary the constant that produces it before concluding
+anything about the controller.
+
+**Value clipping was freezing the critic.** PPO's value loss never converged —
+54, then 20, then back to 43, for 600k steps. The cause was one line:
+
+```gdscript
+clipped_value = b_val + (new_value - b_val).clamp(-args.clip, args.clip)
+```
+
+`args.clip` is the *policy ratio* clip, 0.2. Applied as an absolute bound on a
+value prediction in return units running to ~130 with errors around 50, it is a
+leash 250 times shorter than the error — and `clamp` has no gradient once
+saturated, so any time the critic wanted to move more than 0.2 it received
+nothing at all. The policy was being handed advantages computed from a critic
+that could not learn.
+
+`ValueNorm` normalises the value targets so the critic works in units of 1,
+where 0.2 is a sensible step and the clip does the job it was written for. Value
+loss went from 43.29 to **0.01** — the fraction of return variance it fails to
+explain, so it now accounts for about 99% of it.
 
 **The landing rate was measuring splashdowns.** This one invalidated a whole
 round of results, so it goes first.
@@ -245,40 +318,60 @@ roughly doubled the landing rate within the first 400k steps.
 
 ## Results
 
-300 episodes each, on the retuned planets, policies at the distribution mean.
+200 episodes each, policies at the distribution mean, decisions at 10 Hz
+(`--repeat 6`). The task is **reach the planet's largest continent from anywhere
+and land on it**, so a landing counts only on the target landmass.
 
-200 episodes each. The task is now **reach the planet's largest continent from
-anywhere and land on it**, so a landing counts only on the target landmass.
+The time limit is reported alongside every number, because it turned out to be
+part of the measurement rather than part of the setup:
 
-| Controller | Landing rate | Ditched | Missed | Timeout | Touchdown |
-| --- | --- | --- | --- | --- | --- |
-| Hand-written baseline | **93.0%** | 0.5% | 0.0% | 6.5% | 1.00 |
-| Behaviour clone | 83.0% | 2.0% | 0.0% | 14.5% | 1.23 |
-| Clone + 4 DAgger rounds | **92.0%** | 0.5% | 0.0% | 7.0% | 1.00 |
+| Controller | 9,000 ticks | 27,000 ticks | 27,000 + 120s fuel |
+| --- | --- | --- | --- |
+| Hand-written baseline | 92.5% | **99.0%** | **92.5%** |
+| Best PPO policy | 92.0% | 98.0% | 92.0% |
 
-In-game, through `ShipAutopilot` on the real `main.tscn` ship, engaging from
-uniformly random positions with orbital velocity and half of them tumbling:
-**12/12 landed** on the target continent, 1.09-1.38 units/s, alignment 1.000,
-from starting angles up to 2.40 radians — most of the way round the planet.
+At the old limit both controllers lose ~6.5% of episodes to the clock and
+nothing else. At 27,000 the expert's failures fall to one crash and one ditch in
+200. Under a fuel budget both give back about six points.
+
+**PPO no longer destroys a good initialisation — but it has never beaten the
+expert.** It ties or loses in every configuration above. What changed is the
+failure mode, not the ranking:
+
+| | before | after |
+| --- | --- | --- |
+| PPO on a clone | 97% -> **2.5%** | 80% -> **92.5%** |
+| return vs landing rate | moved *opposite* | correlate **+0.41** |
+
+The second row is the one that matters. Training return climbing while landings
+collapsed was the signature of a reward the agent could not see the important
+half of; with the horizon fixed, the two move together and the gradient points
+somewhere worth going. That is the difference between a broken setup and a
+working one that has not yet earned its keep.
+
+**Beware the peak.** A run's best iteration is not its score. The landing-rate
+plateau has mean 92.0% and sd 1.6%, against binomial noise of 1.9% on a
+200-episode window — so the spread is entirely sampling error, and taking the
+maximum over 73 such windows reliably overstates by two or three points. One run
+peaked at 94.0% and evaluated deterministically at 92.0%. `policy_best.json`
+selects on that noisy statistic, so it means "luckiest window", not "best
+policy"; always re-measure with `evaluate.py`.
+
+**Fuel buys economy, not reliability.** Trained against a 120-second budget, the
+policy lands on 22.4s median fuel against the expert's 25.6s and 55.6s worst
+against 61.0s — a real ~12% efficiency gain, and the one dimension where
+learning beats the controller. It pays for it with more ditches (7.5% vs 6.0%).
+Since no reward term mentions fuel, that trade was not asked for; it emerged.
+Worth knowing, not worth calling a win.
 
 **Cloning alone plateaus; DAgger fixes it.** Plain behaviour cloning stuck at
 83% however much data or capacity it was given — at one point action MSE
 improved 2.5x with *no* change in landing rate, and the failures merely moved
 from ditching to hovering. That is compounding error, not underfitting: fitting
 the expert's actions on the expert's own states teaches nothing about the states
-the learner's small errors actually lead to.
-
-Four rounds of DAgger (Ross, Gordon & Bagnell 2011) — the learner flies, the
-expert labels what the learner reaches — took it to 92.0%, within a point of the
-expert. Reproduce with `--warm-start 7000 --dagger-rounds 4 --clone-epochs 14
---hidden 128 --steps 1`; `--steps 1` gives zero PPO iterations, so what is saved
-is the imitation policy.
-
-**PPO still makes things worse**, and that has not changed. On the earlier,
-narrower task six hundred thousand steps of fine-tuning took a 97% clone to
-2.5%, with the return falling too — PPO destroying a good initialisation rather
-than exploiting the objective. The shipped `policy.json` is the imitation
-policy.
+the learner's small errors actually lead to. Four rounds of DAgger (Ross, Gordon
+& Bagnell 2011) — the learner flies, the expert labels what the learner reaches
+— closed it to within a point of the expert.
 
 **One expert change was made purely for the learner's benefit.** The
 descend-or-cruise decision started as a hard boolean, which works fine as a
@@ -287,6 +380,15 @@ a step, so it learns a smeared version and half-commits. Making the expert
 smooth — a continuous `ready` blend instead of a branch — cost the controller
 about four points and cut clone MSE by 2.5x. **If a policy is going to be
 imitated, the demonstrator's own discontinuities are a design decision.**
+
+**Training on the correct horizon made things worse, and I cannot explain it.**
+A policy trained at 9,000 ticks and merely *evaluated* at 27,000 scores 98.0%,
+despite reading an episode-progress input that is three times out of calibration.
+The same recipe trained at 27,000 scores 92.0%, with real crashes and ditches
+rather than timeouts. The likeliest story is that a 3x longer clock removes the
+pressure to be efficient and yields fewer terminal events per 600k steps, so
+less landing signal — but that is a guess, and it is the most anomalous result
+here. See `TODO.md`.
 
 ## Terrain
 
@@ -327,9 +429,14 @@ makes continents, and the mean slope drops to 5-7 degrees.
   consistent with training.
 - Agent ships ignore each other (collision layer 9) and share one solar system
   and one clock.
-- **Land-seeking is a local gradient walk.** Observations 15-17 are the gradient
-  of the continent field at the ship, so an agent walks uphill to the *nearest*
-  coast and cannot know a better one lies behind it. Where the field goes flat,
-  mid-ocean, the signal is zero and the honest behaviour is to hover until the
-  clock runs out. This is why `spawn_land_fraction` exists rather than being a
-  uniform spawn: the task is "do not come down in the sea", not "cross one".
+- **Reinforcement learning has not yet paid for itself.** The best PPO policy
+  matches the hand-written controller and does not beat it, in any configuration
+  measured. What ships is competitive, not superior, and the honest description
+  of the pipeline is "imitation, with RL that no longer hurts".
+- **`policy_best.json` selects on a noisy statistic** — the best of ~73
+  rolling-window landing rates, each with about 1.9% binomial noise. It
+  overstates by two or three points. Treat it as a checkpoint to evaluate, never
+  as a result.
+- **Fine-tuning peaks around iteration 20 and then erodes**, giving back ten
+  points over the rest of a 600k-step run. Fixing the critic raised the peak but
+  did not remove the erosion.

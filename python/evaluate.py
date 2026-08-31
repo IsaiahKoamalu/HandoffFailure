@@ -36,6 +36,9 @@ from godot_env import ACT_SIZE, OBS_SIZE, OUTCOME_NAMES, RUNNING, LANDED, GodotV
 # policy rather than reporting that it could not find the new one.
 DEFAULT_POLICY = Path(__file__).resolve().parent.parent / "rl/runs/landing/policy.json"
 
+# Fuel fraction is the last slot of the observation; see rl/landing_env.gd.
+FUEL_SLOT = 19
+
 # Observation layout, mirroring LandingEnv.build_observation.
 ALT = 0
 V_LOCAL = slice(2, 5)
@@ -204,6 +207,15 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=11040)
     parser.add_argument("--seed", type=int, default=1234)
     parser.add_argument("--max-ticks", type=int, default=20000)
+    parser.add_argument("--fuel", type=float, default=0.0,
+                        help="seconds of full thrust per episode. 0 is unlimited.")
+    parser.add_argument("--max-steps", type=int, default=0,
+                        help="physics ticks before an episode is truncated. 0 keeps "
+                             "the env default of 9000.")
+    parser.add_argument("--repeat", type=int, default=1,
+                        help="physics ticks per decision. Must match what the "
+                             "policy was trained at, or the comparison is between "
+                             "two different control problems.")
     args = parser.parse_args()
 
     if args.controller == "policy":
@@ -223,13 +235,20 @@ def main() -> None:
     lengths: list[int] = []
 
     with GodotVecEnv(
-        args.godot, args.project, num_agents=args.agents, port=args.port, seed=args.seed
+        args.godot, args.project, num_agents=args.agents, port=args.port,
+        seed=args.seed, repeat=args.repeat, max_steps=args.max_steps,
+        fuel_seconds=args.fuel,
     ) as env:
         obs = env.reset()
         running_return = np.zeros(args.agents)
         running_length = np.zeros(args.agents, dtype=int)
+        fuel_used: list[float] = []
+        landed_fuel: list[float] = []
 
         for _ in range(args.max_ticks):
+            # Fuel left going in to the step, so an episode that ends on this
+            # step is measured before autoreset refills the tanks.
+            before = obs[:, FUEL_SLOT].copy()
             obs, reward, terminated, truncated, info = env.step(controller(obs))
             running_return += reward
             running_length += 1
@@ -241,6 +260,11 @@ def main() -> None:
                     if outcome == LANDED:
                         landed_impacts.append(float(info["impact"][i]))
                 if terminated[i] or truncated[i]:
+                    if args.fuel > 0.0:
+                        used = (1.0 - float(before[i])) * args.fuel
+                        fuel_used.append(used)
+                        if outcome == LANDED:
+                            landed_fuel.append(used)
                     returns.append(float(running_return[i]))
                     lengths.append(int(running_length[i]))
                     running_return[i] = 0.0
@@ -252,8 +276,16 @@ def main() -> None:
     print(f"\n=== {label} ===")
     print(f"episodes            {len(returns)}")
     print(f"landing rate        {outcomes[LANDED] / total:.1%}")
+    if args.fuel > 0.0 and landed_fuel:
+        q = np.percentile(landed_fuel, [50, 90, 99])
+        print(f"fuel of a landing   median {q[0]:.1f}s  p90 {q[1]:.1f}s  "
+              f"p99 {q[2]:.1f}s  max {max(landed_fuel):.1f}s  of {args.fuel:.0f}s")
     print(f"mean return         {np.mean(returns):.2f}")
-    print(f"mean episode length {np.mean(lengths):.0f} ticks ({np.mean(lengths) / 60:.1f}s)")
+    # `lengths` counts decisions, and a decision is `repeat` physics ticks. At
+    # repeat 6 a 491-decision episode is 49 seconds of flight, not 8.
+    ticks = np.mean(lengths) * args.repeat
+    print(f"mean episode length {ticks:.0f} ticks ({ticks / 60:.1f}s)"
+          + (f", {np.mean(lengths):.0f} decisions" if args.repeat > 1 else ""))
     if impacts:
         print(f"touchdown speed     mean {np.mean(impacts):.2f}  median {np.median(impacts):.2f}"
               f"  p90 {np.percentile(impacts, 90):.2f} units/s")

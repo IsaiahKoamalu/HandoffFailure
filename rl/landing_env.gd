@@ -29,7 +29,7 @@ class_name LandingEnv
 ## under analytic gravity, so this costs nothing in fidelity and buys a whole
 ## vectorised batch per engine tick.
 
-const OBS_SIZE: int = 19
+const OBS_SIZE: int = 20
 const ACT_SIZE: int = 6
 
 # Episode outcomes, reported to the trainer for logging.
@@ -74,11 +74,20 @@ const LAND_STEP_FAR: float = 0.75
 ## spawn shell, or 'ran out of time' and 'refused to land' become the same
 ## observation and the logs stop meaning anything: assist caps free fall near
 ## 6 units/s, so the 63-unit ceiling below is about 10 seconds of falling.
-## At 60 Hz this is 150 seconds. It has to cover the worst case the autopilot
+## At 60 Hz this is 450 seconds. It has to cover the worst case the autopilot
 ## is now expected to survive: falling in from a radius above the surface, then
 ## crossing to a coast. A limit sized for the old narrow shell turned every
 ## long approach into a timeout and taught the policy that distance was fatal.
-@export var max_steps: int = 9000
+##
+## It was 9000, and that number was quietly setting the score. Measured on the
+## hand-written controller, tripling it took landings from 92.5% to 99.0% and
+## timeouts from 6.5% to zero -- every single one of those thirteen episodes
+## converted to a landing, and not one to a crash or a ditch. They were far-side
+## starts that needed longer than 150 seconds to cross the planet, cut off
+## mid-flight. Three separate PPO runs had all plateaued at "92%", which looked
+## like a control ceiling and was in fact the clock: nobody was failing to land,
+## they were failing to arrive before the buzzer.
+@export var max_steps: int = 27000
 
 ## Touchdown counts as a landing below this speed relative to the surface.
 ## Deliberately looser than Ship._landing_speed (0.2), which is the threshold
@@ -155,6 +164,15 @@ const LAND_STEP_FAR: float = 0.75
 ## worth about 39 reward, against 120 for the landing itself.
 @export var site_weight: float = 25.0
 
+## Seconds of full thrust each agent starts an episode with. Zero is unlimited.
+##
+## No reward term goes with this, deliberately. Fuel is a constraint, not a
+## preference: running dry is punished already, by the crash or the ditch that
+## follows. Paying a bonus for leftover fuel would invent a second objective and
+## make it impossible to say afterwards whether the policy learned to land
+## economically or merely learned to hoard.
+@export var fuel_seconds: float = 0.0
+
 var ships: Array[Ship] = []
 var targets: Array[Planet] = []
 
@@ -182,6 +200,7 @@ func setup(ship_scene: PackedScene, planets: Array[Planet], seed_value: int) -> 
 		var ship: Ship = ship_scene.instantiate()
 		# Both are read by Ship._ready, so they have to be set before the ship
 		# enters the tree.
+		ship.fuel_seconds = fuel_seconds
 		ship.headless_agent = true
 		ship.agent_visuals = visible_agents
 		ship.external_control = true
@@ -277,6 +296,7 @@ func reset_agent(i: int) -> void:
 	ship.throttle = 0.0
 	ship.command_thrust = Vector3.ZERO
 	ship.command_turn = Vector3.ZERO
+	ship.refuel()
 
 	_steps[i] = 0
 	_potential[i] = _compute_potential(i)
@@ -502,9 +522,23 @@ static func build_observation(
 	# How far, as a fraction of the farthest it could possibly be. 0 is standing
 	# on the target, 1 is the antipode.
 	into[at + 18] = float(site[0]) / PI
+	# Fuel left, as a fraction. Reads 1.0 on a ship with unlimited tanks, so a
+	# policy trained without a budget sees a constant here and one trained with
+	# a budget sees the thing it has to ration.
+	into[at + 19] = ship.fuel_fraction()
 
 
 # --- Reward ------------------------------------------------------------------
+
+## Re-take the shaping baseline without paying out for the change.
+##
+## An agent that ends its episode part way through a held action coasts to the
+## next decision boundary before its new episode starts being scored. That coast
+## still moves the ship, and without this the movement would be charged to the
+## first action of the new episode, which did not cause it.
+func rebaseline(i: int) -> void:
+	_potential[i] = _compute_potential(i)
+
 
 ## Potential-based shaping. The per-step reward is the *change* in this, which
 ## (Ng, Harada & Russell, 1999) leaves the optimal policy unchanged — shaping of

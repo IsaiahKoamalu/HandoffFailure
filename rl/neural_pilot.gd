@@ -21,6 +21,8 @@ class_name NeuralPilot
 const DEFAULT_PATH := "res://rl/runs/landing/policy.json"
 
 var obs_size: int = 0
+## Physics ticks each action was held for in training; the autopilot matches it.
+var repeat: int = 1
 var act_size: int = 0
 var trained_steps: int = 0
 
@@ -60,6 +62,8 @@ func _adopt(data: Dictionary) -> bool:
 	obs_size = int(data.get("obs_size", 0))
 	act_size = int(data.get("act_size", 0))
 	trained_steps = int(data.get("trained_steps", 0))
+	# Older policies predate the field and were trained one decision per tick.
+	repeat = maxi(1, int(data.get("repeat", 1)))
 	if obs_size != LandingEnv.OBS_SIZE or act_size != LandingEnv.ACT_SIZE:
 		# Almost always means the observation was changed without retraining.
 		# Better to refuse than to silently feed the network the wrong columns.

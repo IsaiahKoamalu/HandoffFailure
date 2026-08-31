@@ -16,6 +16,10 @@ extends Node3D
 ## "hud" is optional and ignored unless --render is on: it is whatever the
 ## trainer wants shown on screen, and nothing in the loop reads it.
 ##
+## One exchange per physics tick is the default, but `--repeat=N` holds each
+## action for N ticks and exchanges once per hold, summing the rewards in
+## between. See `repeat` below for why that matters.
+##
 ## The read blocks inside _physics_process, which stalls the whole engine until
 ## Python answers. That is the point: the two processes are in lock-step, so a
 ## rollout is exactly reproducible and no transition is ever dropped.
@@ -48,6 +52,31 @@ const PLAYER_ONLY := ["HUD", "Ship", "Astronaut"]
 ## Physics ticks per simulated second when rendering. The step stays 1/60 of a
 ## simulated second, so this is a playback speed and not a physics change.
 @export var render_rate: int = 180
+## Physics ticks each action is held for: one decision every `repeat` ticks.
+##
+## The ship is simulated at 60 Hz but does not need deciding at 60 Hz -- the
+## expert this task was cloned from is a proportional law that would be
+## unchanged at 10. What the decision rate does change is the discount horizon.
+## At gamma 0.997 the agent sees 1/(1-gamma) = 333 decisions ahead; at one
+## decision per tick that is 5.6 seconds against episodes running 18 to 54, so
+## the +120 landing bonus arrives discounted to 120 * 0.997^2000 = 0.3 reward.
+## Shaping is worth ~39 over the same episode and is paid densely and early, so
+## it survives discounting nearly intact. The agent was not weighing 39 against
+## 120; it was weighing 39 against 0.3, and it could not see the landing at all.
+##
+## Holding an action for 6 ticks puts a whole episode inside the horizon, and
+## cuts the round trips per episode by the same factor.
+##
+## Left at 1 by default: the shipped policy was cloned at one decision per tick
+## and evaluating it at another rate would not be measuring the same thing.
+@export var repeat: int = 1
+## Physics ticks before an episode is truncated. 0 leaves LandingEnv's own
+## default alone. Exposed because "how often does this controller land?" turns
+## out to depend on it: every controller measured so far, the hand-written one
+## included, fails 6.5% of episodes by timeout and almost nothing else.
+@export var max_steps: int = 0
+## Seconds of full thrust per episode, passed to LandingEnv. Zero is unlimited.
+@export var fuel_seconds: float = 0.0
 
 var _env: LandingEnv
 var _spectator: TrainSpectator = null
@@ -58,6 +87,20 @@ var _rx := PackedByteArray()
 var _obs := PackedFloat32Array()
 var _act := PackedFloat32Array()
 var _first_tick := true
+
+# --- Held-action state -------------------------------------------------------
+# Physics ticks left before the next exchange, and the batch being summed up
+# over them. An agent that ends its episode inside a hold stops accumulating
+# and coasts on a zero action until the next decision boundary, so its reward
+# never mixes two episodes together.
+var _hold: int = 0
+var _stepping: Array[bool] = []
+var _acc_reward := PackedFloat32Array()
+var _acc_done := PackedInt32Array()
+var _acc_trunc := PackedInt32Array()
+var _acc_outcome := PackedInt32Array()
+var _acc_impact := PackedFloat32Array()
+var _acc_final := {}
 
 
 func _ready() -> void:
@@ -93,6 +136,9 @@ func _ready() -> void:
 	_env.num_agents = num_agents
 	_env.flight_assist = assist
 	_env.visible_agents = render
+	_env.fuel_seconds = fuel_seconds
+	if max_steps > 0:
+		_env.max_steps = max_steps
 	add_child(_env)
 	_env.setup(load(SHIP_SCENE), landable, seed_value)
 
@@ -106,6 +152,13 @@ func _ready() -> void:
 
 	_obs.resize(num_agents * LandingEnv.OBS_SIZE)
 	_act.resize(num_agents * LandingEnv.ACT_SIZE)
+	_acc_reward.resize(num_agents)
+	_acc_done.resize(num_agents)
+	_acc_trunc.resize(num_agents)
+	_acc_outcome.resize(num_agents)
+	_acc_impact.resize(num_agents)
+	_stepping.resize(num_agents)
+	_begin_hold()
 
 	var error := _server.listen(port, "127.0.0.1")
 	if error != OK:
@@ -130,6 +183,9 @@ func _parse_arguments() -> void:
 			"--assist": assist = int(pair[1]) != 0
 			"--render": render = int(pair[1]) != 0
 			"--rate": render_rate = int(pair[1])
+			"--repeat": repeat = maxi(1, int(pair[1]))
+			"--max-steps": max_steps = int(pair[1])
+			"--fuel": fuel_seconds = float(pair[1])
 
 
 func _wait_for_client() -> void:
@@ -148,52 +204,59 @@ func _physics_process(_delta: float) -> void:
 	if _peer == null:
 		return
 
-	var rewards := PackedFloat32Array()
-	var dones := PackedInt32Array()
-	var truncs := PackedInt32Array()
-	var outcomes := PackedInt32Array()
-	var impacts := PackedFloat32Array()
-	rewards.resize(num_agents)
-	dones.resize(num_agents)
-	truncs.resize(num_agents)
-	outcomes.resize(num_agents)
-	impacts.resize(num_agents)
-	# Observations from just before a reset, which the trainer needs to
-	# bootstrap the value function across a time-limit cut. Only ended episodes
-	# appear here, so it is empty on almost every tick.
-	var final_obs := {}
+	if not _first_tick:
+		_accumulate_tick()
+		_hold -= 1
+		if _hold > 0:
+			# Mid-hold: keep driving with the action already given. Frozen
+			# agents have had their row zeroed, so they coast.
+			for i in num_agents:
+				_env.apply_action(i, _act, i * LandingEnv.ACT_SIZE)
+			return
 
+	if not _exchange():
+		return
+	_begin_hold()
+	_first_tick = false
+
+
+# Simulate one tick of the current hold into the accumulators.
+func _accumulate_tick() -> void:
 	for i in num_agents:
-		var stride: int = i * LandingEnv.OBS_SIZE
-
-		if _first_tick:
-			rewards[i] = 0.0
-			dones[i] = 0
-			truncs[i] = 0
-			outcomes[i] = LandingEnv.RUNNING
-			impacts[i] = 0.0
-			_env.observe(i, _obs, stride)
+		if not _stepping[i]:
 			continue
 
 		var result: Array = _env.step_result(i, _act, i * LandingEnv.ACT_SIZE)
-		rewards[i] = result[0]
-		dones[i] = 1 if result[1] else 0
-		truncs[i] = 1 if result[2] else 0
-		outcomes[i] = _env.last_outcome[i]
-		impacts[i] = _env.last_impact[i]
+		_acc_reward[i] += result[0]
+		_acc_outcome[i] = _env.last_outcome[i]
+		_acc_impact[i] = _env.last_impact[i]
 
-		if result[1] or result[2]:
-			if _spectator != null:
-				_spectator.note_outcome(_env.last_outcome[i])
-			var terminal := PackedFloat32Array()
-			terminal.resize(LandingEnv.OBS_SIZE)
-			_env.observe(i, terminal, 0)
-			final_obs[str(i)] = terminal
-			_env.reset_agent(i)
+		if not (result[1] or result[2]):
+			continue
 
-		_env.observe(i, _obs, stride)
+		_acc_done[i] = 1 if result[1] else 0
+		_acc_trunc[i] = 1 if result[2] else 0
+		if _spectator != null:
+			_spectator.note_outcome(_env.last_outcome[i])
+		var terminal := PackedFloat32Array()
+		terminal.resize(LandingEnv.OBS_SIZE)
+		_env.observe(i, terminal, 0)
+		_acc_final[str(i)] = terminal
+		_env.reset_agent(i)
 
-	_first_tick = false
+		# Done for this hold. The new episode coasts to the next decision
+		# boundary rather than being flown by the action that ended the last one.
+		_stepping[i] = false
+		var stride: int = i * LandingEnv.ACT_SIZE
+		for k in LandingEnv.ACT_SIZE:
+			_act[stride + k] = 0.0
+
+
+# Send the batch, read the reply, and hand the new actions to the ships.
+# Returns false if the exchange ended the run.
+func _exchange() -> bool:
+	for i in num_agents:
+		_env.observe(i, _obs, i * LandingEnv.OBS_SIZE)
 
 	var rows := []
 	for i in num_agents:
@@ -201,31 +264,31 @@ func _physics_process(_delta: float) -> void:
 
 	if not _send({
 		"obs": rows,
-		"rew": rewards,
-		"done": dones,
-		"trunc": truncs,
-		"outcome": outcomes,
-		"impact": impacts,
-		"final": final_obs,
+		"rew": _acc_reward,
+		"done": _acc_done,
+		"trunc": _acc_trunc,
+		"outcome": _acc_outcome,
+		"impact": _acc_impact,
+		"final": _acc_final,
 	}):
-		return
+		return false
 
 	var line := _read_line()
 	if line.is_empty():
 		_shutdown("trainer disconnected")
-		return
+		return false
 
 	var message = JSON.parse_string(line)
 	if typeof(message) != TYPE_DICTIONARY:
 		_shutdown("unparseable message from trainer")
-		return
+		return false
 	if message.get("cmd", "") == "close":
 		_shutdown("trainer asked to close")
-		return
+		return false
 	if message.get("cmd", "") == "reset_all":
 		_env.reset_all()
 		_first_tick = true
-		return
+		return false
 
 	if _spectator != null:
 		var hud = message.get("hud", null)
@@ -235,7 +298,7 @@ func _physics_process(_delta: float) -> void:
 	var actions: Array = message.get("act", [])
 	if actions.size() != num_agents:
 		_shutdown("expected %d action rows, got %d" % [num_agents, actions.size()])
-		return
+		return false
 
 	for i in num_agents:
 		var row: Array = actions[i]
@@ -243,6 +306,25 @@ func _physics_process(_delta: float) -> void:
 		for k in LandingEnv.ACT_SIZE:
 			_act[stride + k] = clampf(float(row[k]), -1.0, 1.0)
 		_env.apply_action(i, _act, stride)
+	return true
+
+
+# Open a fresh hold: clear the accumulators and put every agent back in play.
+func _begin_hold() -> void:
+	for i in num_agents:
+		# An agent that sat out the tail of the last hold has drifted since its
+		# reward was last read. Re-take its shaping baseline so that drift is
+		# not charged to the action about to be taken.
+		if not _stepping[i] and not _first_tick:
+			_env.rebaseline(i)
+		_stepping[i] = true
+		_acc_reward[i] = 0.0
+		_acc_done[i] = 0
+		_acc_trunc[i] = 0
+		_acc_outcome[i] = LandingEnv.RUNNING
+		_acc_impact[i] = 0.0
+	_acc_final = {}
+	_hold = repeat
 
 
 # --- Transport ---------------------------------------------------------------

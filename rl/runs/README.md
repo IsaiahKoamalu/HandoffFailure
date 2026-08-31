@@ -1,26 +1,50 @@
 # Runs
 
 `landing/policy.json` is the policy the game loads (`NeuralPilot.DEFAULT_PATH`).
-It is an **imitation policy**: four DAgger rounds against the hand-written
-controller in `python/evaluate.py`, no PPO. It measured 92.0% clean landings on
-the target continent, from uniformly random starts with orbital velocity and
-tumbling, against 93.0% for the expert it was cloned from.
+It is a **20-input, 64-wide network trained for 600,000 steps at one decision
+per six physics ticks** (`"repeat": 6` in the file; `ShipAutopilot` reads that
+field and holds actions to match). Verified end to end: 12/12 landed on the
+target continent through the real `main.tscn` ship, from starting angles up to
+3.03 radians — very nearly antipodal — at 0.79-1.50 units/s with alignment
+1.000, and GDScript inference agrees with numpy to 6.22e-07.
 
-Reproduce with `--warm-start 7000 --dagger-rounds 4 --clone-epochs 14
---hidden 128 --steps 1`. `--steps 1` gives zero PPO iterations, so what gets
-saved is the imitation policy; no `progress.csv` sits beside it because there
-are no iterations to log.
+It is **not the best policy in this directory**. `vnorm/policy_best.json`
+measured 98.0% at the 27,000-tick limit against this one's 92.0%. Swapping them
+is in `../../TODO.md` and wants a deliberate re-verification, not a file copy.
 
-The other directories are older evidence for `../landing-log.html`. **Their
-landing rates are not comparable to the number above**: they were measured
-before the environment could tell land from water, on planets that were 90-97%
-ocean, and a splashdown was scored as a landing. See the first entry under
-"Things that were true and inconvenient" in `../README.md`.
+## Reading the landing rates below
 
-| Directory | What it is | Landing rate (as then measured) |
+Two environment changes make older numbers incomparable, and both were large:
+
+- **Before water** (`clone/`, `scratch-ppo/`, `finetune/`): the planets were
+  90-97% ocean and a splashdown scored as a landing. See the first entries under
+  "Things that were true and inconvenient" in `../README.md`.
+- **Before the time limit was rebased** (everything trained at `max_steps`
+  9,000): roughly 6.5% of episodes were cut off in level flight. The
+  hand-written controller scores 92.5% under that limit and 99.0% without it,
+  having changed not at all.
+
+Rates below are as measured at the time, under the environment of the time.
+
+| Directory | What it is | Landing rate |
 | --- | --- | --- |
 | `clone/` | 3,000 ticks of behaviour cloning, no PPO | 39.7% |
 | `scratch-ppo/` | PPO from random init, 5.0M steps | 4.0% |
 | `finetune/` | clone + critic warm-up + PPO, 3.0M steps | 3.0% |
+| `landing20/` | 600k steps, 20-input observation | 90.0% |
+| `fuel40/` | 900k steps against a 40-second fuel budget | 75.0% |
+| `repeat6/` | first run at 10 Hz decisions and sigma 0.08 | 92.0% |
+| `repeat6b/` | as above plus `--critic-warmup 15` | 92.0% |
+| `vnorm/` | as above plus normalised value targets | 92.0% at 9k, **98.0%** at 27k |
+| `base27k/` | retrained at the rebased 27,000-tick limit | 92.0% |
+| `fuel120/` | trained against a 120-second fuel budget | 92.0% |
+
+`repeat6` through `fuel120` are the runs behind the results table in
+`../README.md`. Their headline value is the *comparison*, not any single rate:
+three different critics all landing at exactly 92.0% is what exposed the time
+limit as the thing being measured.
+
+`base27k` is the anomaly worth chasing — trained on the correct horizon and
+worse for it than `vnorm`, which trained on the wrong one.
 
 `.gdignore` keeps Godot from importing the CSVs as resources.

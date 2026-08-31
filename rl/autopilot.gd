@@ -25,10 +25,12 @@ class_name ShipAutopilot
 ## LandingEnv.max_steps: the policy has an episode-progress input, so running it
 ## far past the horizon it trained on is feeding it a number it never saw.
 ##
-## 150 seconds, because the job is no longer "land from just above the pad". It
+## 450 seconds, because the job is no longer "land from just above the pad". It
 ## is "get to the largest continent from wherever you are and land on it", and
 ## crossing half a planet at the ship's cruise speed is a minute on its own.
-const MAX_TICKS: int = 9000
+## Measured: at 150 seconds one approach in fifteen was still airborne and on
+## course when the clock cut it off. Kept in step with LandingEnv.max_steps.
+const MAX_TICKS: int = 27000
 
 ## How far the ship's origin sits above the ground when it is resting on its
 ## struts, plus margin.
@@ -48,6 +50,11 @@ signal engaged_changed(engaged: bool)
 
 var is_engaged: bool = false
 var is_available: bool = false
+
+## The action being held, and how many ticks are left of it.
+var _command_thrust: Vector3 = Vector3.ZERO
+var _command_turn: Vector3 = Vector3.ZERO
+var _held: int = 0
 ## Why the autopilot is not flying, for the HUD to show.
 var status: String = "no policy"
 
@@ -86,6 +93,7 @@ func toggle() -> void:
 		return
 	is_engaged = true
 	_ticks = 0
+	_held = 0
 	_restore_external = _ship.external_control
 	_ship.external_control = true
 	status = "engaged"
@@ -131,9 +139,16 @@ func _physics_process(_delta: float) -> void:
 		disengage("timed out")
 		return
 
-	LandingEnv.build_observation(
-		_ship, planet, float(_ticks) / float(MAX_TICKS), _observation, 0
-	)
-	var action := _pilot.act(_observation)
-	_ship.command_thrust = Vector3(action[0], action[1], action[2])
-	_ship.command_turn = Vector3(action[3], action[4], action[5])
+	# Decide at the rate the policy was trained at, and hold in between. The
+	# commands are not latched on the ship, so they are re-applied every tick.
+	if _held <= 0:
+		LandingEnv.build_observation(
+			_ship, planet, float(_ticks) / float(MAX_TICKS), _observation, 0
+		)
+		var action := _pilot.act(_observation)
+		_command_thrust = Vector3(action[0], action[1], action[2])
+		_command_turn = Vector3(action[3], action[4], action[5])
+		_held = _pilot.repeat
+	_held -= 1
+	_ship.command_thrust = _command_thrust
+	_ship.command_turn = _command_turn

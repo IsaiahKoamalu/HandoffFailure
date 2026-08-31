@@ -1,0 +1,24 @@
+cloning the baseline controller for 3000 ticks
+  round 1/4  96,000 samples  mse 0.02014
+  round 2/4  192,000 samples  mse 0.01281
+  round 3/4  288,000 samples  mse 0.00917
+  round 4/4  384,000 samples  mse 0.00678
+warm start: action sigma set to 0.080
+iter    1/73  step     8,192  return   101.27  len    111  land 100.0%  crash  0.0%  ditch  0.0%  miss  0.0%  2,648 sps
+iter    5/73  step    40,960  return   124.01  len    369  land 89.1%  crash  0.0%  ditch  5.5%  miss  0.0%  2,549 sps
+iter   10/73  step    81,920  return   113.98  len    523  land 88.6%  crash  0.0%  ditch  3.5%  miss  0.0%  2,552 sps
+iter   15/73  step   122,880  return   109.23  len    548  land 90.6%  crash  0.0%  ditch  2.9%  miss  0.0%  2,554 sps
+iter   20/73  step   163,840  return   103.29  len    652  land 90.5%  crash  0.0%  ditch  2.0%  miss  0.0%  2,508 sps
+iter   25/73  step   204,800  return    81.25  len    798  land 88.5%  crash  0.0%  ditch  2.5%  miss  0.0%  2,468 sps
+iter   30/73  step   245,760  return    83.83  len    775  land 90.0%  crash  0.0%  ditch  2.0%  miss  0.0%  2,490 sps
+iter   35/73  step   286,720  return    77.54  len    819  land 87.0%  crash  0.0%  ditch  2.0%  miss  0.0%  2,514 sps
+iter   40/73  step   327,680  return   105.50  len    646  land 89.5%  crash  0.0%  ditch  1.0%  miss  0.0%  2,544 sps
+iter   45/73  step   368,640  return   121.98  len    539  land 89.5%  crash  0.5%  ditch  2.5%  miss  0.0%  2,569 sps
+iter   50/73  step   409,600  return    98.14  len    644  land 90.5%  crash  2.0%  ditch  2.0%  miss  0.0%  2,586 sps
+iter   55/73  step   450,560  return   107.51  len    533  land 87.0%  crash  4.0%  ditch  4.0%  miss  0.0%  2,595 sps
+iter   60/73  step   491,520  return   107.90  len    492  land 88.0%  crash  4.0%  ditch  4.0%  miss  0.0%  2,601 sps
+iter   65/73  step   532,480  return    93.63  len    728  land 87.0%  crash  3.5%  ditch  4.0%  miss  0.0%  2,608 sps
+iter   70/73  step   573,440  return    89.78  len    695  land 87.0%  crash  1.5%  ditch  5.0%  miss  0.0%  2,600 sps
+best landing rate 91.5% at step 401,408, kept alongside as policy_best.json
+
+wrote ..\rl\runs\base27k\policy.json and ..\rl\runs\base27k\progress.csv

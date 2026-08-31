@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import collections
 import json
+import math
 import time
 from pathlib import Path
 
@@ -57,6 +58,56 @@ class RunningNorm:
 
     def __call__(self, obs: np.ndarray) -> np.ndarray:
         return np.clip((obs - self.mean) / np.sqrt(self.var + 1e-8), -10.0, 10.0).astype(np.float32)
+
+
+class ValueNorm:
+    """Running mean/std of the value targets, so the critic learns in units of 1.
+
+    The critic used to regress raw discounted returns, which run to about 130
+    here with errors around 50 -- and value clipping bounded how far a
+    prediction could move per update by ``--clip``, the *policy ratio* clip,
+    0.2. In return units that is a leash 250 times shorter than the error, and
+    ``clamp`` has no gradient once saturated, so any time the critic wanted to
+    move more than 0.2 it received nothing at all. Value loss never converged in
+    600k steps: 54, then 20, then back to 43.
+
+    Normalising the targets puts them in units where 0.2 is a sensible step and
+    the clip does the job it was written for. The network predicts a normalised
+    value; everything outside this class works in real returns.
+
+    Note the logged value_loss changes meaning with this: it is now roughly the
+    fraction of return variance the critic fails to explain, so 1.0 is "no
+    better than guessing the mean" and smaller is better.
+    """
+
+    def __init__(self) -> None:
+        self.mean = 0.0
+        self.var = 1.0
+        self.count = 1e-4
+
+    def update(self, returns: torch.Tensor) -> None:
+        batch = returns.detach().numpy().reshape(-1).astype(np.float64)
+        batch_mean = float(batch.mean())
+        batch_var = float(batch.var())
+        batch_count = batch.size
+
+        delta = batch_mean - self.mean
+        total = self.count + batch_count
+        self.mean += delta * batch_count / total
+        m_a = self.var * self.count
+        m_b = batch_var * batch_count
+        self.var = (m_a + m_b + delta**2 * self.count * batch_count / total) / total
+        self.count = total
+
+    @property
+    def std(self) -> float:
+        return float(np.sqrt(self.var) + 1e-8)
+
+    def normalise(self, real: torch.Tensor) -> torch.Tensor:
+        return (real - self.mean) / self.std
+
+    def denormalise(self, normalised: torch.Tensor) -> torch.Tensor:
+        return normalised * self.std + self.mean
 
 
 def layer_init(layer: nn.Linear, std: float = np.sqrt(2), bias: float = 0.0) -> nn.Linear:
@@ -200,6 +251,7 @@ def train(args: argparse.Namespace) -> None:
     model = ActorCritic(OBS_SIZE, ACT_SIZE, args.hidden).to(device)
     optimiser = torch.optim.Adam(model.parameters(), lr=args.lr, eps=1e-5)
     normaliser = RunningNorm(OBS_SIZE)
+    value_norm = ValueNorm()
 
     env = GodotVecEnv(
         args.godot,
@@ -209,6 +261,8 @@ def train(args: argparse.Namespace) -> None:
         seed=args.seed,
         render=args.render,
         render_rate=args.render_rate,
+        repeat=args.repeat,
+        fuel_seconds=args.fuel,
         # A rendered run is paced by the engine rather than by this side, so
         # a rollout takes far longer in wall-clock terms without anything
         # being wrong. The watchdog has to allow for that.
@@ -236,9 +290,23 @@ def train(args: argparse.Namespace) -> None:
         )
     else:
         raw_obs = env.reset()
+
+    if args.warm_std is not None:
+        # Cloning leaves a near-deterministic policy; PPO then samples around it
+        # with whatever log_std happens to hold. At the default that is sigma
+        # 0.37 against actions in [-1, 1] -- noise of the same order as the
+        # commands themselves, which does not explore around a precision
+        # landing so much as replace it. The first rollout after a warm start
+        # is then bad data, and the first update learns from it.
+        with torch.no_grad():
+            model.log_std.fill_(math.log(args.warm_std))
+        print(f"warm start: action sigma set to {args.warm_std:.3f}", flush=True)
+
     normaliser.update(raw_obs)
     next_obs = torch.as_tensor(normaliser(raw_obs))
 
+    best_rate = -1.0
+    best_step = 0
     episode_return = np.zeros(n)
     episode_length = np.zeros(n, dtype=np.int64)
     recent_returns: collections.deque[float] = collections.deque(maxlen=100)
@@ -268,7 +336,7 @@ def train(args: argparse.Namespace) -> None:
                 action, logp, _, value = model.act(next_obs)
             act_buf[t] = action
             logp_buf[t] = logp
-            val_buf[t] = value
+            val_buf[t] = value_norm.denormalise(value)
 
             raw_obs, reward, terminated, truncated, info = env.step(
                 np.clip(action.numpy(), -1.0, 1.0)
@@ -285,7 +353,9 @@ def train(args: argparse.Namespace) -> None:
             for index, final in info["final_obs"].items():
                 if truncated[index]:
                     with torch.no_grad():
-                        tail = model.value(torch.as_tensor(normaliser(final[None]))[0])
+                        tail = value_norm.denormalise(
+                            model.value(torch.as_tensor(normaliser(final[None]))[0])
+                        )
                     rew_buf[t, index] += args.gamma * tail
 
             episode_return += reward
@@ -309,7 +379,7 @@ def train(args: argparse.Namespace) -> None:
 
         # --- GAE ------------------------------------------------------------
         with torch.no_grad():
-            next_value = model.value(next_obs)
+            next_value = value_norm.denormalise(model.value(next_obs))
             advantages = torch.zeros_like(rew_buf)
             last_gae = torch.zeros(n)
             for t in reversed(range(rollout)):
@@ -323,13 +393,17 @@ def train(args: argparse.Namespace) -> None:
                 last_gae = delta + args.gamma * args.gae_lambda * (1.0 - cut_buf[t]) * last_gae
                 advantages[t] = last_gae
             returns = advantages + val_buf
+            # Fold this batch in before normalising, so early iterations -- when
+            # the running stats are still the identity -- move quickly.
+            value_norm.update(returns)
 
         b_obs = obs_buf.reshape(-1, OBS_SIZE)
         b_act = act_buf.reshape(-1, ACT_SIZE)
         b_logp = logp_buf.reshape(-1)
         b_adv = advantages.reshape(-1)
-        b_ret = returns.reshape(-1)
-        b_val = val_buf.reshape(-1)
+        # The critic works in normalised units; advantages and returns stay real.
+        b_ret = value_norm.normalise(returns.reshape(-1))
+        b_val = value_norm.normalise(val_buf.reshape(-1))
 
         batch_size = rollout * n
         minibatch = batch_size // args.minibatches
@@ -419,17 +493,32 @@ def train(args: argparse.Namespace) -> None:
                 flush=True,
             )
 
+        # Keep the best policy as well as the last one. A fine-tuning run does
+        # not always end at its peak -- this one climbed from 80% to 91.5% and
+        # then gave several points back -- and saving only the final weights
+        # throws away the very thing the run was asked to find out.
+        if len(recent_outcomes) >= 100 and rates["landed"] > best_rate:
+            best_rate = rates["landed"]
+            best_step = global_step
+            save(model, normaliser, out_dir, args, tag="best")
+
         if iteration % args.save_every == 0 or iteration == iterations:
             save(model, normaliser, out_dir, args)
 
     log_file.close()
     env.close()
     save(model, normaliser, out_dir, args)
+    if best_rate >= 0.0:
+        print(f"best landing rate {best_rate:.1%} at step {best_step:,}, "
+              f"kept alongside as policy_best.json")
     print(f"\nwrote {out_dir / 'policy.json'} and {log_path}")
 
 
-def save(model: ActorCritic, normaliser: RunningNorm, out_dir: Path, args) -> None:
-    torch.save(model.state_dict(), out_dir / "policy.pt")
+def save(
+    model: ActorCritic, normaliser: RunningNorm, out_dir: Path, args, tag: str = ""
+) -> None:
+    suffix = f"_{tag}" if tag else ""
+    torch.save(model.state_dict(), out_dir / f"policy{suffix}.pt")
     # Only the actor is exported. The critic exists to train the actor and has
     # no job at inference time.
     layers = []
@@ -450,8 +539,13 @@ def save(model: ActorCritic, normaliser: RunningNorm, out_dir: Path, args) -> No
         "obs_mean": normaliser.mean.tolist(),
         "obs_std": np.sqrt(normaliser.var + 1e-8).tolist(),
         "trained_steps": args.steps,
+        # Physics ticks each action was held for during training. The in-game
+        # autopilot holds for the same number: a policy that learned to act at
+        # 10 Hz and is asked to act at 60 will re-decide six times inside one
+        # of its own intended commands.
+        "repeat": args.repeat,
     }
-    (out_dir / "policy.json").write_text(json.dumps(payload), encoding="utf-8")
+    (out_dir / f"policy{suffix}.json").write_text(json.dumps(payload), encoding="utf-8")
 
 
 def parse_args() -> argparse.Namespace:
@@ -482,6 +576,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--clone-lr", type=float, default=1e-3)
     parser.add_argument("--critic-warmup", type=int, default=0,
                         help="iterations of value-only updates before the policy moves")
+    parser.add_argument("--fuel", type=float, default=0.0,
+                        help="seconds of full thrust per episode. 0 is unlimited.")
+    parser.add_argument("--repeat", type=int, default=1,
+                        help="physics ticks to hold each action for. One decision "
+                             "every N ticks. At 1 the discount horizon "
+                             "(1/(1-gamma) = 333 decisions) covers 5.6 seconds of "
+                             "an episode that runs 18 to 54, so the landing bonus "
+                             "reaches the start of an episode discounted to a "
+                             "quarter of a reward point and the agent optimises "
+                             "shaping instead. 6 puts the episode inside the horizon.")
+    parser.add_argument("--warm-std", type=float, default=None,
+                        help="action standard deviation to start PPO from after a "
+                             "warm start. The default init is exp(-1) = 0.37 on "
+                             "actions bounded to [-1, 1], which is enough noise to "
+                             "destroy a cloned landing policy on its first rollout "
+                             "-- and the gradient is then computed on the wreckage. "
+                             "Try 0.08 when fine-tuning a clone.")
     parser.add_argument("--render", action="store_true",
                         help="watch training in a window instead of running headless")
     parser.add_argument("--render-rate", type=int, default=180,
