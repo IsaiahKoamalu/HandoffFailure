@@ -32,7 +32,7 @@ import torch
 import torch.nn as nn
 
 from evaluate import baseline_controller
-from godot_env import ACT_SIZE, OBS_SIZE, OUTCOME_NAMES, RUNNING, GodotVecEnv
+from godot_env import ACT_SIZE, RUNNING, GodotVecEnv
 
 
 class RunningNorm:
@@ -248,11 +248,6 @@ def train(args: argparse.Namespace) -> None:
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    model = ActorCritic(OBS_SIZE, ACT_SIZE, args.hidden).to(device)
-    optimiser = torch.optim.Adam(model.parameters(), lr=args.lr, eps=1e-5)
-    normaliser = RunningNorm(OBS_SIZE)
-    value_norm = ValueNorm()
-
     env = GodotVecEnv(
         args.godot,
         args.project,
@@ -267,11 +262,23 @@ def train(args: argparse.Namespace) -> None:
         # a rollout takes far longer in wall-clock terms without anything
         # being wrong. The watchdog has to allow for that.
         step_timeout=120.0 if args.render else 30.0,
+        task=args.task,
     )
+    # The engine names the task's observation width in its hello message, so
+    # the network is built to fit whatever task is actually running rather than
+    # to a constant on this side that only happened to match one of them.
+    obs_size = env.obs_size
+    print(f"task '{env.task}': obs {obs_size}, act {env.act_size}", flush=True)
+
+    model = ActorCritic(obs_size, ACT_SIZE, args.hidden).to(device)
+    optimiser = torch.optim.Adam(model.parameters(), lr=args.lr, eps=1e-5)
+    normaliser = RunningNorm(obs_size)
+    value_norm = ValueNorm()
+
     n = args.agents
     rollout = args.rollout
 
-    obs_buf = torch.zeros(rollout, n, OBS_SIZE)
+    obs_buf = torch.zeros(rollout, n, obs_size)
     act_buf = torch.zeros(rollout, n, ACT_SIZE)
     logp_buf = torch.zeros(rollout, n)
     rew_buf = torch.zeros(rollout, n)
@@ -397,7 +404,7 @@ def train(args: argparse.Namespace) -> None:
             # the running stats are still the identity -- move quickly.
             value_norm.update(returns)
 
-        b_obs = obs_buf.reshape(-1, OBS_SIZE)
+        b_obs = obs_buf.reshape(-1, obs_size)
         b_act = act_buf.reshape(-1, ACT_SIZE)
         b_logp = logp_buf.reshape(-1)
         b_adv = advantages.reshape(-1)
@@ -456,7 +463,7 @@ def train(args: argparse.Namespace) -> None:
         # --- Logging ---------------------------------------------------------
         counts = collections.Counter(recent_outcomes)
         total = max(len(recent_outcomes), 1)
-        rates = {name: counts[code] / total for code, name in OUTCOME_NAMES.items()}
+        rates = {name: counts[code] / total for code, name in env.outcome_names.items()}
         mean_return = float(np.mean(recent_returns)) if recent_returns else float("nan")
         mean_length = float(np.mean(recent_lengths)) if recent_lengths else float("nan")
         mean_impact = float(np.mean(recent_impacts)) if recent_impacts else float("nan")
@@ -464,8 +471,10 @@ def train(args: argparse.Namespace) -> None:
 
         log_file.write(
             f"{global_step},{iteration},{mean_return:.3f},{mean_length:.1f},"
-            f"{rates['landed']:.4f},{rates['crashed']:.4f},{rates['timeout']:.4f},"
-            f"{rates['escaped']:.4f},{rates['ditched']:.4f},{rates['missed']:.4f},"
+            f"{rates.get('landed', 0.0):.4f},{rates.get('crashed', 0.0):.4f},"
+            f"{rates.get('timeout', 0.0):.4f},"
+            f"{rates.get('escaped', 0.0):.4f},{rates.get('ditched', 0.0):.4f},"
+            f"{rates.get('missed', 0.0):.4f},"
             f"{mean_impact:.3f},"
             f"{value_loss.item():.4f},"
             f"{policy_loss.item():.4f},{entropy_value.item():.4f},{elapsed:.1f}\n"
@@ -500,14 +509,14 @@ def train(args: argparse.Namespace) -> None:
         if len(recent_outcomes) >= 100 and rates["landed"] > best_rate:
             best_rate = rates["landed"]
             best_step = global_step
-            save(model, normaliser, out_dir, args, tag="best")
+            save(model, normaliser, out_dir, args, env, tag="best")
 
         if iteration % args.save_every == 0 or iteration == iterations:
-            save(model, normaliser, out_dir, args)
+            save(model, normaliser, out_dir, args, env)
 
     log_file.close()
     env.close()
-    save(model, normaliser, out_dir, args)
+    save(model, normaliser, out_dir, args, env)
     if best_rate >= 0.0:
         print(f"best landing rate {best_rate:.1%} at step {best_step:,}, "
               f"kept alongside as policy_best.json")
@@ -515,7 +524,8 @@ def train(args: argparse.Namespace) -> None:
 
 
 def save(
-    model: ActorCritic, normaliser: RunningNorm, out_dir: Path, args, tag: str = ""
+    model: ActorCritic, normaliser: RunningNorm, out_dir: Path, args,
+    env: GodotVecEnv, tag: str = "",
 ) -> None:
     suffix = f"_{tag}" if tag else ""
     torch.save(model.state_dict(), out_dir / f"policy{suffix}.pt")
@@ -532,8 +542,12 @@ def save(
             )
     payload = {
         "format": 1,
-        "obs_size": OBS_SIZE,
-        "act_size": ACT_SIZE,
+        "obs_size": env.obs_size,
+        "act_size": env.act_size,
+        # Which task these weights fly. A policy loaded against a different one
+        # would still run and still look busy while flying something it was
+        # never trained for, so the loader checks this.
+        "task": env.task,
         "activation": "tanh",
         "layers": layers,
         "obs_mean": normaliser.mean.tolist(),
@@ -553,6 +567,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--godot", required=True)
     parser.add_argument("--project", required=True)
     parser.add_argument("--out", default="rl/runs/landing")
+    parser.add_argument("--task", default="landing")
     parser.add_argument("--agents", type=int, default=32)
     parser.add_argument("--port", type=int, default=11008)
     parser.add_argument("--seed", type=int, default=1)

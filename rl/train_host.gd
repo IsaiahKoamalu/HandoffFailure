@@ -45,7 +45,7 @@ const PLAYER_ONLY := ["HUD", "Ship", "Astronaut"]
 @export var port: int = 11008
 @export var num_agents: int = 16
 @export var seed_value: int = 1
-## Passed through to LandingEnv.flight_assist.
+## Passed through to ShipTaskEnv.flight_assist.
 @export var assist: bool = true
 ## Open a window with a chase camera and a readout instead of running blind.
 @export var render: bool = false
@@ -70,15 +70,23 @@ const PLAYER_ONLY := ["HUD", "Ship", "Astronaut"]
 ## Left at 1 by default: the shipped policy was cloned at one decision per tick
 ## and evaluating it at another rate would not be measuring the same thing.
 @export var repeat: int = 1
-## Physics ticks before an episode is truncated. 0 leaves LandingEnv's own
+## Physics ticks before an episode is truncated. 0 leaves the task's own
 ## default alone. Exposed because "how often does this controller land?" turns
 ## out to depend on it: every controller measured so far, the hand-written one
 ## included, fails 6.5% of episodes by timeout and almost nothing else.
 @export var max_steps: int = 0
-## Seconds of full thrust per episode, passed to LandingEnv. Zero is unlimited.
+## Seconds of full thrust per episode, passed to the task. Zero is unlimited.
 @export var fuel_seconds: float = 0.0
 
-var _env: LandingEnv
+## Which task to serve. The host owns the socket and the clock and nothing
+## else; the task owns the observation, the reward and what ends an episode.
+@export var task: String = "landing"
+
+var _env: ShipTaskEnv
+# Cached off the task once, because they are read several times per agent per
+# tick and a task's widths cannot change while it is running.
+var _obs_size: int = 0
+var _act_size: int = 0
 var _spectator: TrainSpectator = null
 var _server := TCPServer.new()
 var _peer: StreamPeerTCP = null
@@ -122,16 +130,11 @@ func _ready() -> void:
 			world.remove_child(node)
 			node.queue_free()
 
-	var landable: Array[Planet] = []
-	for planet in SolarSystem.Instance.Planets:
-		if planet.terrain_enabled:
-			landable.append(planet)
-	if landable.is_empty():
-		push_error("No planet in main.tscn has terrain_enabled; nothing to land on.")
+	_env = _make_env(task)
+	if _env == null:
+		push_error("Unknown task '%s'." % task)
 		get_tree().quit(1)
 		return
-
-	_env = LandingEnv.new()
 	_env.name = "Env"
 	_env.num_agents = num_agents
 	_env.flight_assist = assist
@@ -140,18 +143,29 @@ func _ready() -> void:
 	if max_steps > 0:
 		_env.max_steps = max_steps
 	add_child(_env)
-	_env.setup(load(SHIP_SCENE), landable, seed_value)
+	if not _env.setup(load(SHIP_SCENE), seed_value):
+		# The task has already said why. It could not bind to the world it
+		# needs, so there is nothing to serve.
+		get_tree().quit(1)
+		return
+	_obs_size = _env.obs_size()
+	_act_size = _env.act_size()
 
-	if render:
+	if render and _env is LandingEnv:
 		# Faster than real time, but still a fixed step. The trainer is on the
 		# other end of a blocking socket, so this is a ceiling rather than a
 		# target: the loop still runs at whatever the slower half manages.
 		Engine.physics_ticks_per_second = render_rate
 		_spectator = TrainSpectator.new(_env)
 		add_child(_spectator)
+	elif render:
+		# The overlay reads landing geometry — altitude, coastline, continent
+		# bearing — so it is a landing visualiser, not a generic one. Another
+		# task renders as a plain window until it has its own.
+		Engine.physics_ticks_per_second = render_rate
 
-	_obs.resize(num_agents * LandingEnv.OBS_SIZE)
-	_act.resize(num_agents * LandingEnv.ACT_SIZE)
+	_obs.resize(num_agents * _obs_size)
+	_act.resize(num_agents * _act_size)
 	_acc_reward.resize(num_agents)
 	_acc_done.resize(num_agents)
 	_acc_trunc.resize(num_agents)
@@ -165,9 +179,17 @@ func _ready() -> void:
 		push_error("Could not listen on port %d: %s" % [port, error_string(error)])
 		get_tree().quit(1)
 		return
-	print("[train_host] %d agents on %d planets, listening on 127.0.0.1:%d"
-		% [num_agents, landable.size(), port])
+	print("[train_host] task '%s', %d agents, obs %d, listening on 127.0.0.1:%d"
+		% [_env.task_name(), num_agents, _obs_size, port])
 	_wait_for_client()
+
+
+## The task registry. One line per task; everything else in this file is
+## task-agnostic.
+func _make_env(name: String) -> ShipTaskEnv:
+	match name:
+		"landing": return LandingEnv.new()
+	return null
 
 
 func _parse_arguments() -> void:
@@ -178,6 +200,7 @@ func _parse_arguments() -> void:
 			continue
 		match pair[0]:
 			"--agents": num_agents = int(pair[1])
+			"--task": task = pair[1]
 			"--port": port = int(pair[1])
 			"--seed": seed_value = int(pair[1])
 			"--assist": assist = int(pair[1]) != 0
@@ -195,6 +218,24 @@ func _wait_for_client() -> void:
 	# Nagle would coalesce our one-line-per-tick writes into larger, later
 	# packets, which in a lock-step protocol is pure added latency.
 	_peer.set_no_delay(true)
+	# Describe the task before any data flows. The trainer used to carry its own
+	# copy of the observation width and the outcome names, which is fine while
+	# there is one task and silently wrong the moment there are two: a policy
+	# would be allocated at the wrong shape and the logs would label outcomes
+	# from a task nobody was running.
+	var outcomes := {}
+	for id in _env.outcome_names():
+		outcomes[str(id)] = _env.outcome_names()[id]
+	_send({
+		"type": "hello",
+		"task": _env.task_name(),
+		"obs_size": _obs_size,
+		"act_size": _act_size,
+		"num_agents": num_agents,
+		"repeat": repeat,
+		"max_steps": _env.max_steps,
+		"outcomes": outcomes,
+	})
 	print("[train_host] trainer connected")
 
 
@@ -211,7 +252,7 @@ func _physics_process(_delta: float) -> void:
 			# Mid-hold: keep driving with the action already given. Frozen
 			# agents have had their row zeroed, so they coast.
 			for i in num_agents:
-				_env.apply_action(i, _act, i * LandingEnv.ACT_SIZE)
+				_env.apply_action(i, _act, i * _act_size)
 			return
 
 	if not _exchange():
@@ -226,7 +267,7 @@ func _accumulate_tick() -> void:
 		if not _stepping[i]:
 			continue
 
-		var result: Array = _env.step_result(i, _act, i * LandingEnv.ACT_SIZE)
+		var result: Array = _env.step_result(i, _act, i * _act_size)
 		_acc_reward[i] += result[0]
 		_acc_outcome[i] = _env.last_outcome[i]
 		_acc_impact[i] = _env.last_impact[i]
@@ -239,7 +280,7 @@ func _accumulate_tick() -> void:
 		if _spectator != null:
 			_spectator.note_outcome(_env.last_outcome[i])
 		var terminal := PackedFloat32Array()
-		terminal.resize(LandingEnv.OBS_SIZE)
+		terminal.resize(_obs_size)
 		_env.observe(i, terminal, 0)
 		_acc_final[str(i)] = terminal
 		_env.reset_agent(i)
@@ -247,8 +288,8 @@ func _accumulate_tick() -> void:
 		# Done for this hold. The new episode coasts to the next decision
 		# boundary rather than being flown by the action that ended the last one.
 		_stepping[i] = false
-		var stride: int = i * LandingEnv.ACT_SIZE
-		for k in LandingEnv.ACT_SIZE:
+		var stride: int = i * _act_size
+		for k in _act_size:
 			_act[stride + k] = 0.0
 
 
@@ -256,11 +297,11 @@ func _accumulate_tick() -> void:
 # Returns false if the exchange ended the run.
 func _exchange() -> bool:
 	for i in num_agents:
-		_env.observe(i, _obs, i * LandingEnv.OBS_SIZE)
+		_env.observe(i, _obs, i * _obs_size)
 
 	var rows := []
 	for i in num_agents:
-		rows.append(_obs.slice(i * LandingEnv.OBS_SIZE, (i + 1) * LandingEnv.OBS_SIZE))
+		rows.append(_obs.slice(i * _obs_size, (i + 1) * _obs_size))
 
 	if not _send({
 		"obs": rows,
@@ -302,8 +343,8 @@ func _exchange() -> bool:
 
 	for i in num_agents:
 		var row: Array = actions[i]
-		var stride: int = i * LandingEnv.ACT_SIZE
-		for k in LandingEnv.ACT_SIZE:
+		var stride: int = i * _act_size
+		for k in _act_size:
 			_act[stride + k] = clampf(float(row[k]), -1.0, 1.0)
 		_env.apply_action(i, _act, stride)
 	return true
@@ -321,7 +362,7 @@ func _begin_hold() -> void:
 		_acc_reward[i] = 0.0
 		_acc_done[i] = 0
 		_acc_trunc[i] = 0
-		_acc_outcome[i] = LandingEnv.RUNNING
+		_acc_outcome[i] = ShipTaskEnv.RUNNING
 		_acc_impact[i] = 0.0
 	_acc_final = {}
 	_hold = repeat

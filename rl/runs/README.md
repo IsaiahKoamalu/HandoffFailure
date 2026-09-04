@@ -3,7 +3,9 @@
 `landing/policy.json` is the policy the game loads (`NeuralPilot.DEFAULT_PATH`).
 It is a **20-input, 64-wide network trained for 600,000 steps at one decision
 per six physics ticks** (`"repeat": 6` in the file; `ShipAutopilot` reads that
-field and holds actions to match). Verified end to end: 12/12 landed on the
+field and holds actions to match). It carries no `task` field, as every
+policy here predates the multi-task split; `NeuralPilot` reads those as landers,
+which they all are. Verified end to end: 12/12 landed on the
 target continent through the real `main.tscn` ship, from starting angles up to
 3.03 radians — very nearly antipodal — at 0.79-1.50 units/s with alignment
 1.000, and GDScript inference agrees with numpy to 6.22e-07.

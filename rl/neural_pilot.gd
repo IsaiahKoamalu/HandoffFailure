@@ -10,7 +10,8 @@ class_name NeuralPilot
 ## this size would be all cost and no benefit.
 ##
 ## The weights file is written by ppo.save(). Layout:
-##     { "format": 1, "obs_size": 14, "act_size": 6, "activation": "tanh",
+##     { "format": 1, "task": "landing", "obs_size": 20, "act_size": 6,
+##       "activation": "tanh",
 ##       "layers": [ {"w": [[...] x out][in], "b": [...]}, ... ],
 ##       "obs_mean": [...], "obs_std": [...] }
 ##
@@ -20,6 +21,10 @@ class_name NeuralPilot
 
 const DEFAULT_PATH := "res://rl/runs/landing/policy.json"
 
+## Which task these weights were trained for. Checked on load, because a
+## policy trained for one task will happily run against another: it produces
+## six numbers in range either way, and flies something it has never seen.
+var task: String = "landing"
 var obs_size: int = 0
 ## Physics ticks each action was held for in training; the autopilot matches it.
 var repeat: int = 1
@@ -59,11 +64,18 @@ func _adopt(data: Dictionary) -> bool:
 		push_warning("NeuralPilot: unsupported weights format")
 		return false
 
+	# Policies predating the multi-task split have no task field, and every one
+	# of them was a lander.
+	task = str(data.get("task", "landing"))
 	obs_size = int(data.get("obs_size", 0))
 	act_size = int(data.get("act_size", 0))
 	trained_steps = int(data.get("trained_steps", 0))
 	# Older policies predate the field and were trained one decision per tick.
 	repeat = maxi(1, int(data.get("repeat", 1)))
+	if task != "landing":
+		push_warning("NeuralPilot: policy was trained for '%s'; this loader flies landings."
+			% task)
+		return false
 	if obs_size != LandingEnv.OBS_SIZE or act_size != LandingEnv.ACT_SIZE:
 		# Almost always means the observation was changed without retraining.
 		# Better to refuse than to silently feed the network the wrong columns.

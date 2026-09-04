@@ -28,7 +28,7 @@ from pathlib import Path
 
 import numpy as np
 
-from godot_env import ACT_SIZE, OBS_SIZE, OUTCOME_NAMES, RUNNING, LANDED, GodotVecEnv
+from godot_env import ACT_SIZE, RUNNING, LANDED, GodotVecEnv
 
 # Anchored to this file rather than the working directory. Every documented
 # invocation is from python/, so a bare relative path quietly resolved to a
@@ -178,7 +178,11 @@ class PolicyController:
 
     def __init__(self, path: Path) -> None:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
-        assert data["obs_size"] == OBS_SIZE and data["act_size"] == ACT_SIZE
+        assert data["act_size"] == ACT_SIZE
+        # Checked against the engine once it has said which task it is running;
+        # this file cannot know that on its own.
+        self.obs_size = int(data["obs_size"])
+        self.task = data.get("task", "landing")
         self.layers = [
             (np.asarray(layer["w"], dtype=np.float32), np.asarray(layer["b"], dtype=np.float32))
             for layer in data["layers"]
@@ -239,7 +243,19 @@ def main() -> None:
         seed=args.seed, repeat=args.repeat, max_steps=args.max_steps,
         fuel_seconds=args.fuel,
     ) as env:
+        if isinstance(controller, PolicyController):
+            if controller.task != env.task:
+                raise SystemExit(
+                    f"policy was trained for task '{controller.task}', "
+                    f"engine is running '{env.task}'"
+                )
+            if controller.obs_size != env.obs_size:
+                raise SystemExit(
+                    f"policy expects {controller.obs_size} observations, "
+                    f"engine sends {env.obs_size}"
+                )
         obs = env.reset()
+        names = env.outcome_names
         running_return = np.zeros(args.agents)
         running_length = np.zeros(args.agents, dtype=int)
         fuel_used: list[float] = []
@@ -292,7 +308,7 @@ def main() -> None:
     if landed_impacts:
         print(f"  of the landings   mean {np.mean(landed_impacts):.2f} units/s")
     for outcome, count in sorted(outcomes.items()):
-        print(f"  {OUTCOME_NAMES.get(outcome, outcome):<8} {count / total:6.1%}  ({count})")
+        print(f"  {names.get(outcome, outcome):<8} {count / total:6.1%}  ({count})")
 
 
 if __name__ == "__main__":

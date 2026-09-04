@@ -13,7 +13,7 @@ import time
 
 import numpy as np
 
-from godot_env import OUTCOME_NAMES, RUNNING, GodotVecEnv
+from godot_env import RUNNING, GodotVecEnv
 
 
 def main() -> None:
@@ -39,6 +39,7 @@ def main() -> None:
         fuel_seconds=args.fuel,
     ) as env:
         obs = env.reset()
+        names = env.outcome_names
         print(f"obs batch {obs.shape}, first row:\n  {np.round(obs[0], 3)}")
 
         start = time.time()
@@ -60,7 +61,7 @@ def main() -> None:
     if finished:
         print(f"random-policy return: mean {np.mean(finished):.1f}  min {min(finished):.1f}  max {max(finished):.1f}")
     for outcome, count in outcomes.most_common():
-        print(f"  {OUTCOME_NAMES.get(outcome, outcome):<8} {count}")
+        print(f"  {names.get(outcome, outcome):<8} {count}")
     if not np.isfinite(obs).all():
         raise SystemExit("FAIL: non-finite values in observations")
     print("observations finite: ok")

@@ -18,7 +18,8 @@ python/ppo.py  <--- JSON over TCP, one exchange per decision --->  rl/train.tscn
 
 | File | What it is |
 | --- | --- |
-| `rl/landing_env.gd` | The task: spawns, observations, reward, termination |
+| `rl/ship_task_env.gd` | Base for every control task: the agent pool, the clock, the action seam |
+| `rl/landing_env.gd` | The landing task: spawns, observations, reward, termination |
 | `rl/train_host.gd` | Headless host — loads `main.tscn`, strips the player, serves the socket |
 | `rl/train.tscn` | The scene the trainer runs |
 | `rl/neural_pilot.gd` | MLP forward pass in GDScript, loads `policy.json` |
@@ -102,6 +103,37 @@ third of the batch is tumbling. The batch strip is what makes the hover obvious:
 a policy that has learned to land and one that has learned to wait look the same
 through the chase camera for the first ten seconds and completely different as
 sixteen altitude bars that stop going down.
+
+### One host, several tasks
+
+`ShipTaskEnv` owns what the tasks share — a pool of ships wired for external
+control, the episode clock, the shaping baseline, and `apply_action`, which is
+identical everywhere because every task flies the same six commands. A task
+supplies a *reference target* and a *terminal condition*: a planet surface for
+landing, and later another vessel for docking or an orbit for a transfer. Pick
+one with `--task` (default `landing`); the registry is `_make_env` in
+`train_host.gd`, one line per task.
+
+The engine **describes the task on connect**, before any data flows:
+
+```json
+{"type": "hello", "task": "landing", "obs_size": 20, "act_size": 6,
+ "num_agents": 32, "repeat": 6, "max_steps": 27000,
+ "outcomes": {"1": "landed", "2": "crashed", ...}}
+```
+
+`ppo.py` builds its network to that width and takes its log labels from those
+names. Both used to be constants in `godot_env.py` — fine with one task, and
+silently wrong with two: the network would be allocated at the wrong shape and
+the logs would label outcomes belonging to a task nobody was running. The
+handshake also cross-checks `num_agents` and `repeat`, which are otherwise told
+to each side separately and desynchronise the protocol a few frames later with
+an unhelpful message.
+
+`policy.json` records `"task"` alongside `"repeat"`, and `NeuralPilot` refuses a
+policy trained for another one. A mismatched policy does not fail on its own —
+it produces six numbers in range either way and flies something it has never
+seen. Policies predating the field are read as landers, which they all were.
 
 ### Decision rate
 

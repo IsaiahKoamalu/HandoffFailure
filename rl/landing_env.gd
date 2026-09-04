@@ -1,4 +1,4 @@
-extends Node3D
+extends ShipTaskEnv
 class_name LandingEnv
 
 ## A vectorised powered-descent environment wrapped around the real ship.
@@ -30,10 +30,9 @@ class_name LandingEnv
 ## vectorised batch per engine tick.
 
 const OBS_SIZE: int = 20
-const ACT_SIZE: int = 6
 
-# Episode outcomes, reported to the trainer for logging.
-const RUNNING: int = 0
+# Episode outcomes, reported to the trainer for logging. RUNNING is the
+# base class's; these number upward from it.
 const LANDED: int = 1
 const CRASHED: int = 2
 const ESCAPED: int = 3
@@ -59,35 +58,6 @@ const LAND_STEP_NEAR: float = 0.08
 ## with distance from the shoreline turns it into a coarse search that can still
 ## see a continent forty degrees away.
 const LAND_STEP_FAR: float = 0.75
-
-## Ships stepped in parallel. Each has its own episode and its own target.
-@export var num_agents: int = 16
-## Leave the ship's own drift assist enabled. See the note at the top: with it
-## off the ship's thrust-to-weight ratio makes landing impossible, so this is
-## really a switch for experiments, not a tuning knob.
-@export var flight_assist: bool = true
-## Give each agent its exhaust plume. Costs nothing when nobody is watching
-## and is off by default; see rl/spectator.gd.
-@export var visible_agents: bool = false
-## Physics ticks before an episode is cut short. At 60 Hz, 1500 is 25 seconds.
-## It has to be comfortably longer than a damped descent from the top of the
-## spawn shell, or 'ran out of time' and 'refused to land' become the same
-## observation and the logs stop meaning anything: assist caps free fall near
-## 6 units/s, so the 63-unit ceiling below is about 10 seconds of falling.
-## At 60 Hz this is 450 seconds. It has to cover the worst case the autopilot
-## is now expected to survive: falling in from a radius above the surface, then
-## crossing to a coast. A limit sized for the old narrow shell turned every
-## long approach into a timeout and taught the policy that distance was fatal.
-##
-## It was 9000, and that number was quietly setting the score. Measured on the
-## hand-written controller, tripling it took landings from 92.5% to 99.0% and
-## timeouts from 6.5% to zero -- every single one of those thirteen episodes
-## converted to a landing, and not one to a crash or a ditch. They were far-side
-## starts that needed longer than 150 seconds to cross the planet, cut off
-## mid-flight. Three separate PPO runs had all plateaued at "92%", which looked
-## like a control ceiling and was in fact the clock: nobody was failing to land,
-## they were failing to arrive before the buzzer.
-@export var max_steps: int = 27000
 
 ## Touchdown counts as a landing below this speed relative to the surface.
 ## Deliberately looser than Ship._landing_speed (0.2), which is the threshold
@@ -164,59 +134,45 @@ const LAND_STEP_FAR: float = 0.75
 ## worth about 39 reward, against 120 for the landing itself.
 @export var site_weight: float = 25.0
 
-## Seconds of full thrust each agent starts an episode with. Zero is unlimited.
-##
-## No reward term goes with this, deliberately. Fuel is a constraint, not a
-## preference: running dry is punished already, by the crash or the ditch that
-## follows. Paying a bonus for leftover fuel would invent a second objective and
-## make it impossible to say afterwards whether the policy learned to land
-## economically or merely learned to hoard.
-@export var fuel_seconds: float = 0.0
-
-var ships: Array[Ship] = []
 var targets: Array[Planet] = []
 
-## Last episode outcome per agent, for the trainer's logs.
-var last_outcome: PackedInt32Array = PackedInt32Array()
-## Speed relative to the surface at the moment of the last touchdown.
-var last_impact: PackedFloat32Array = PackedFloat32Array()
-
-var _steps: PackedInt32Array = PackedInt32Array()
-var _potential: PackedFloat32Array = PackedFloat32Array()
 var _landable: Array[Planet] = []
-var _rng := RandomNumberGenerator.new()
 
 
-func setup(ship_scene: PackedScene, planets: Array[Planet], seed_value: int) -> void:
-	_rng.seed = seed_value
-	_landable = planets
-	_steps.resize(num_agents)
-	_potential.resize(num_agents)
-	last_outcome.resize(num_agents)
-	last_impact.resize(num_agents)
+# --- Description -------------------------------------------------------------
+
+func obs_size() -> int:
+	return OBS_SIZE
+
+
+func task_name() -> String:
+	return "landing"
+
+
+func outcome_names() -> Dictionary:
+	return {
+		LANDED: "landed",
+		CRASHED: "crashed",
+		ESCAPED: "escaped",
+		TIMEOUT: "timeout",
+		DITCHED: "ditched",
+		MISSED: "missed",
+	}
+
+
+## Every planet in the loaded scene that has terrain to land on.
+##
+## This lived in train_host, which meant the generic host knew a landing-shaped
+## precondition. A task states its own requirements.
+func _bind_world() -> bool:
+	for planet in SolarSystem.Instance.Planets:
+		if planet.terrain_enabled:
+			_landable.append(planet)
+	if _landable.is_empty():
+		push_error("No planet in main.tscn has terrain_enabled; nothing to land on.")
+		return false
 	targets.resize(num_agents)
-
-	for i in num_agents:
-		var ship: Ship = ship_scene.instantiate()
-		# Both are read by Ship._ready, so they have to be set before the ship
-		# enters the tree.
-		ship.fuel_seconds = fuel_seconds
-		ship.headless_agent = true
-		ship.agent_visuals = visible_agents
-		ship.external_control = true
-		ship.name = "Agent%d" % i
-		add_child(ship)
-		# Agents fly through each other. They are separate rollouts that happen
-		# to share a world; a collision between two of them is not a real event.
-		ship.collision_layer = 1 << 9
-		ship.collision_mask = ship.collision_mask & ~(1 << 9)
-		var ramp := ship.get_node_or_null("Ramp") as PhysicsBody3D
-		if ramp != null:
-			ramp.collision_layer = 1 << 9
-			ramp.collision_mask = ramp.collision_mask & ~(1 << 9)
-		ship.flight_assist = flight_assist
-		ships.append(ship)
-		reset_agent(i)
+	return true
 
 
 # --- Episode control ---------------------------------------------------------
@@ -302,31 +258,7 @@ func reset_agent(i: int) -> void:
 	_potential[i] = _compute_potential(i)
 
 
-func reset_all() -> void:
-	for i in num_agents:
-		reset_agent(i)
-
-
 # --- Geometry ----------------------------------------------------------------
-
-## Altitude above the analytic terrain surface, the local up direction, and the
-## distance from the planet's centre. Returned together because all three come
-## from the same offset and every caller wants at least two of them.
-##
-## Static, and taking a world position rather than an agent index, because the
-## autopilot needs exactly this and must not compute it a second, subtly
-## different way. See build_observation.
-static func surface_frame(world_pos: Vector3, planet: Planet) -> Array:
-	var offset: Vector3 = world_pos - planet.global_position
-	var distance: float = offset.length()
-	if distance < 0.001:
-		return [0.0, Vector3.UP, 0.001]
-	var up: Vector3 = offset / distance
-	# get_surface_radius_at wants a direction in the planet's own frame: the
-	# noise is sampled in body space, and the planet spins.
-	var local_dir: Vector3 = (planet.global_basis.inverse() * up).normalized()
-	return [distance - planet.get_surface_radius_at(local_dir), up, distance]
-
 
 ## Where the ground under a world position sits relative to sea level, and
 ## which way the nearest land lies.
@@ -439,17 +371,10 @@ func _altitude_and_up(i: int) -> Array:
 	return surface_frame(ships[i].global_position, targets[i])
 
 
-## Speed scale for a planet: the circular orbital speed at its surface. A
-## physical scale rather than a hand-picked constant is what keeps observations
-## in the same range across planets of very different sizes.
-static func speed_scale(planet: Planet) -> float:
-	return maxf(sqrt(planet.standard_gravitational_parameter / planet.surface_radius), 1.0)
-
-
 # --- Observation -------------------------------------------------------------
 
 func observe(i: int, into: PackedFloat32Array, at: int) -> void:
-	build_observation(ships[i], targets[i], float(_steps[i]) / float(max_steps), into, at)
+	build_observation(ships[i], targets[i], episode_progress(i), into, at)
 
 
 ## The one and only definition of what the policy sees.
@@ -530,20 +455,9 @@ static func build_observation(
 
 # --- Reward ------------------------------------------------------------------
 
-## Re-take the shaping baseline without paying out for the change.
-##
-## An agent that ends its episode part way through a held action coasts to the
-## next decision boundary before its new episode starts being scored. That coast
-## still moves the ship, and without this the movement would be charged to the
-## first action of the new episode, which did not cause it.
-func rebaseline(i: int) -> void:
-	_potential[i] = _compute_potential(i)
-
-
-## Potential-based shaping. The per-step reward is the *change* in this, which
-## (Ng, Harada & Russell, 1999) leaves the optimal policy unchanged — shaping of
-## this form can only speed learning up, it cannot bend the agent toward a
-## different task. A raw "closer is better" bonus has no such guarantee.
+## Altitude, surface-relative speed, belly-down alignment, local landness and
+## the bearing to the target continent. See ShipTaskEnv._compute_potential for
+## why this is a potential rather than a bonus.
 func _compute_potential(i: int) -> float:
 	var ship: Ship = ships[i]
 	var planet: Planet = targets[i]
@@ -665,8 +579,3 @@ func step_result(i: int, action: PackedFloat32Array, at: int) -> Array:
 
 	return [reward, false, false]
 
-
-func apply_action(i: int, action: PackedFloat32Array, at: int) -> void:
-	var ship: Ship = ships[i]
-	ship.command_thrust = Vector3(action[at + 0], action[at + 1], action[at + 2])
-	ship.command_turn = Vector3(action[at + 3], action[at + 4], action[at + 5])

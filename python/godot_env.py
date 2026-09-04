@@ -31,19 +31,21 @@ from pathlib import Path
 
 import numpy as np
 
-OBS_SIZE = 20
+# Every control task flies the same ship, so the action width is fixed. The
+# observation width is not: it comes from the engine's hello message, because
+# it is a property of the task and this module does not know which one is
+# running. See GodotVecEnv.obs_size.
 ACT_SIZE = 6
 
-# Mirrors the outcome constants in rl/landing_env.gd.
-RUNNING, LANDED, CRASHED, ESCAPED, TIMEOUT, DITCHED, MISSED = range(7)
-OUTCOME_NAMES = {
-    LANDED: "landed",
-    CRASHED: "crashed",
-    ESCAPED: "escaped",
-    TIMEOUT: "timeout",
-    DITCHED: "ditched",
-    MISSED: "missed",
-}
+# The one outcome every task has. The rest are named by the hello message and
+# land in GodotVecEnv.outcome_names -- there is deliberately no mirrored copy
+# of a task's outcome list here, because a mirror is a thing that can drift.
+RUNNING = 0
+
+# Landing outcome ids, for callers that test for a specific one. These are
+# LandingEnv's constants and mean nothing under another task; anything that
+# only needs to *label* an outcome should use env.outcome_names instead.
+LANDED, CRASHED, ESCAPED, TIMEOUT, DITCHED, MISSED = range(1, 7)
 
 
 class GodotVecEnv:
@@ -63,14 +65,19 @@ class GodotVecEnv:
         repeat: int = 1,
         fuel_seconds: float = 0.0,
         max_steps: int = 0,
+        task: str = "landing",
     ) -> None:
         self.num_agents = num_agents
         # Physics ticks each action is held for. One `step()` here is one
         # decision, which is `repeat` ticks of simulation with the rewards
         # summed. See the note on `repeat` in rl/train_host.gd.
         self.repeat = repeat
-        self.obs_size = OBS_SIZE
+        # Filled in from the engine's hello message, below.
+        self.obs_size = 0
         self.act_size = ACT_SIZE
+        self.task = task
+        self.outcome_names: dict[int, str] = {}
+        self.max_steps = 0
         self._process: subprocess.Popen | None = None
         self._hud: dict | None = None
 
@@ -98,6 +105,7 @@ class GodotVecEnv:
             command += [
                 "--",
                 f"--agents={num_agents}",
+                f"--task={task}",
                 f"--port={port}",
                 f"--seed={seed}",
                 f"--render={1 if render else 0}",
@@ -121,6 +129,31 @@ class GodotVecEnv:
         # seconds is worth far more than the timeout costs.
         self._sock.settimeout(step_timeout)
         self._rx = b""
+        self._hello = self._read_message()
+        if self._hello.get("type") != "hello":
+            raise RuntimeError(
+                f"expected a hello message from Godot, got keys {sorted(self._hello)}"
+            )
+        self.task = self._hello["task"]
+        self.obs_size = int(self._hello["obs_size"])
+        self.act_size = int(self._hello["act_size"])
+        self.max_steps = int(self._hello["max_steps"])
+        self.outcome_names = {
+            int(key): value for key, value in self._hello["outcomes"].items()
+        }
+        # Both sides were told the batch size separately, on the command line
+        # and here. If they disagree the protocol desynchronises a few frames
+        # later with a confusing message, so check it while it is still cheap.
+        if int(self._hello["num_agents"]) != num_agents:
+            raise RuntimeError(
+                f"engine is running {self._hello['num_agents']} agents, "
+                f"expected {num_agents}"
+            )
+        if int(self._hello["repeat"]) != repeat:
+            raise RuntimeError(
+                f"engine is holding actions for {self._hello['repeat']} ticks, "
+                f"expected {repeat}"
+            )
 
     def _connect(self, port: int, timeout: float = 45.0) -> socket.socket:
         """Retry until the engine has finished building terrain and is listening.
