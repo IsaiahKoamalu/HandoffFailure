@@ -134,6 +134,12 @@ var throttle: float = 0.0
 ## When on, the ship cancels sideways drift relative to the body it is near.
 var flight_assist: bool = true
 
+## Flight assist holds `cruise_velocity` rather than trimming drift to zero.
+## Set through set_cruise() / clear_cruise(); see _process_flight_assist.
+var is_cruising: bool = false
+## The world-space velocity the assist holds while cruising.
+var cruise_velocity: Vector3 = Vector3.ZERO
+
 # --- External control --------------------------------------------------------
 # A seam for any pilot that is not a person at a mouse: the RL trainer, and the
 # trained policy flying the ship in game. The dynamics below this line do not
@@ -452,24 +458,57 @@ func _process_thrusters(movement: Vector3) -> void:
 
 ## Cancel drift the pilot did not ask for, relative to the body they are near.
 ##
-## Deliberately does nothing in deep space: there is no frame to hold station
-## against out there, and killing velocity relative to nothing would just make
-## the ship feel stuck. Near a planet it holds you where you point.
+## Near a planet, and with no cruise set, it holds you where you point: the
+## reference is the surface below, so "no input" means "stay put over the
+## ground". That does fight orbital mechanics — the assist reads orbital
+## velocity as drift, so you cannot coast in an orbit. That is what the toggle
+## is for.
 ##
-## This does fight orbital mechanics — with assist on you cannot coast in an
-## orbit, because the assist reads orbital velocity as drift. That is what the
-## toggle is for.
+## In deep space with no cruise set it does nothing, because there is no frame
+## to hold station against and killing velocity relative to nothing would just
+## make the ship feel stuck.
+##
+## With a cruise velocity set it holds *that* instead, anywhere, including
+## between bodies. A ship that can only be trimmed toward stationary cannot
+## cross a solar system: every metre per second it gains is read as drift and
+## spent again, so an autonomous crossing would burn continuously to stand
+## still. Holding a commanded velocity is the same controller pointed at a
+## different reference.
 func _process_flight_assist(dominant: Planet, movement: Vector3) -> void:
-	if not flight_assist or dominant == null or is_submerged or _is_parked:
+	if not flight_assist or is_submerged or _is_parked:
 		return
 
-	var drift: Vector3 = linear_velocity - dominant.get_surface_velocity(global_position)
+	var reference: Vector3
+	if is_cruising:
+		reference = cruise_velocity
+	elif dominant != null:
+		reference = dominant.get_surface_velocity(global_position)
+	else:
+		return
+
+	var drift: Vector3 = linear_velocity - reference
 	if movement != Vector3.ZERO:
 		# Leave the axis being thrust along alone; only trim the rest.
 		var wanted := movement.normalized()
 		drift -= wanted * drift.dot(wanted)
 
 	apply_central_force(-drift * _assist_strength * mass)
+
+
+## Hold `velocity` (world space) instead of holding station over the ground.
+##
+## World space rather than relative to any body, deliberately: a cruise between
+## two planets belongs to neither of their frames, and re-referencing it as the
+## dominant body changed under the ship would step the target velocity every
+## time it crossed a sphere of influence.
+func set_cruise(velocity: Vector3) -> void:
+	is_cruising = true
+	cruise_velocity = velocity
+
+
+func clear_cruise() -> void:
+	is_cruising = false
+	cruise_velocity = Vector3.ZERO
 
 
 func toggle_flight_assist() -> void:

@@ -28,6 +28,7 @@ python/ppo.py  <--- JSON over TCP, one exchange per decision --->  rl/train.tscn
 | `python/ppo.py` | The trainer |
 | `python/evaluate.py` | Scores a controller against two baselines |
 | `python/smoke_test.py` | Checks the bridge before you spend an hour on a run |
+| `rl/cruise_check.tscn` | Checks that the assist can hold a velocity between bodies |
 
 ## Setup
 

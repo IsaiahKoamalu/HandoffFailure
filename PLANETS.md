@@ -475,11 +475,11 @@ and full. Measured at 0.3 s: 0.06 after one tick, 1.00 at 18 ticks, and
 symmetric on release.
 
 `_process_flight_assist` cancels drift relative to the body you are near,
-leaving the axis you are actively thrusting along alone. It does nothing in
-deep space — there is no frame to hold station against, and killing velocity
-relative to nothing would just feel stuck.
+leaving the axis you are actively thrusting along alone. With no cruise set it
+does nothing in deep space — there is no frame to hold station against, and
+killing velocity relative to nothing would just feel stuck.
 
-Two things to know about it:
+Three things to know about it:
 
 - **It fights orbital mechanics.** With assist on you cannot coast in an orbit,
   because assist reads orbital velocity as drift. That is what `[Z]` is for.
@@ -488,6 +488,22 @@ Two things to know about it:
   `_assist_strength = 1.6` and 5.5 m/s² of local gravity that equilibrium is a
   3.4 m/s descent. Raising the strength lowers it proportionally; countering
   gravity outright would be a different feature.
+- **Cruise re-points the same controller.** `Ship.set_cruise(velocity)` makes
+  the assist hold a commanded world-space velocity instead of trimming drift to
+  zero, and it works with no dominant body. Without it a ship cannot cross the
+  system under assist at all: every metre per second it gains is read as drift
+  and spent again, so a crossing would burn continuously to stand still.
+  `clear_cruise()` restores hold-station.
+
+  The reference is world space, not any body's frame, deliberately: a crossing
+  between two planets belongs to neither, and re-referencing it as the dominant
+  body changed would step the target velocity at every sphere-of-influence
+  boundary.
+
+  The equilibrium above still applies while cruising — the settled error is
+  `g / _assist_strength` at wherever the ship is. `rl/cruise_check.tscn` asserts
+  exactly that, and holds at 5.37 against a predicted 5.71 near a planet and
+  0.07 against 0.07 in deep space.
 
 ## Save and load
 
