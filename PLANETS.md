@@ -634,11 +634,46 @@ The ship settles at 1.74 below sea level — matching the predicted
 world velocity tracking the planet's 10.000 units/s orbit. The astronaut rises
 at ~0.31 terminal and floats at exactly sea level.
 
-## The learned autopilot
+## The autopilot
 
 `rl/` trains a PPO agent to fly the ship down to a surface, and runs the result
 in game. Full write-up in `rl/README.md`; the build log with measurements is
 `rl/landing-log.html`.
+
+**It is a stack, not a policy.** `ShipAutopilot` has two phases and the network
+answers only the second:
+
+| Phase | Controller | Where |
+| --- | --- | --- |
+| `TRANSIT` | analytic guidance | anywhere, deep space included |
+| `DESCENT` | the trained policy | inside the destination's sphere of influence |
+
+Transit is one law rather than three: the commanded speed is whatever can still
+be shed before arrival, `sqrt(v_arrival² + 2·a·s)`, capped by a maximum. So
+acceleration, cruise and braking are the same equation at different ranges,
+with no phase boundaries to tune between them. It is deliberately not learned —
+`rl/README.md` records the hand-written controller matching or beating PPO in
+every configuration measured, and a proportional guidance law over a closed-form
+problem is not where RL earns its place.
+
+Two numbers that are not free choices. Transit hands over at
+`HANDOFF_ALT_FACTOR = 1.0` radii, which is where the capture radius of `2 R`
+makes the destination dominant anyway — so the phase switch and the
+sphere-of-influence boundary agree by construction instead of chattering against
+each other. And it aims to arrive at `ARRIVAL_SPEED = 5.0`, chosen to sit inside
+the policy's spawn distribution: `LandingEnv` spawns with a radial component in
+[−8, +2] units/s, so handing the policy a ship falling at 20 would start it
+outside everything it has seen. **The handover is the part that can silently
+break** — a transit that delivers the ship out of distribution fails in the
+descent and looks like a policy problem.
+
+Transit accelerates on the engines and only hands the cruise to flight assist
+once the velocity error is inside `CRUISE_TRIM_BAND`. The assist is uncapped and
+free, so commanding a distant cruise would accelerate the ship for nothing;
+engines do the work and burn for it.
+
+`rl/journey_check.tscn` flies the whole thing end to end — deep space to a
+planet, planet to planet, and both refusals — through the real `main.tscn` ship.
 
 The agent flies through a seam on `Ship`, not around it:
 
@@ -699,8 +734,10 @@ and then hovered a metre and a half up until it timed out. `ShipAutopilot`
 hands back at `HULL_CLEARANCE`, and this is the one gap between training and
 gameplay that no test inside the training environment can see.
 
-**Controls.** `[P]` in the cockpit engages it near a planet. Touching the
-controls takes the ship back.
+**Controls.** `[P]` in the cockpit engages it. It flies to the `[Tab]`
+navigation target, or to the planet underneath when nothing is targeted, and
+refuses a destination it cannot land on — a body with no terrain, or none at
+all. Touching the controls takes the ship back.
 
 **Regenerating.** Adding any script with a new `class_name` requires
 `Godot --headless --path . --import` before a headless run, or the class fails

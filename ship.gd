@@ -495,6 +495,15 @@ func _process_flight_assist(dominant: Planet, movement: Vector3) -> void:
 	apply_central_force(-drift * _assist_strength * mass)
 
 
+## Acceleration available at full thrust, in units per second squared.
+##
+## Force is `_thrust * mass * direction`, so the mass cancels and this is just
+## `_thrust` — but a guidance law that needs to know how hard the ship can brake
+## should ask the ship rather than repeat the number and rot when it is retuned.
+func thrust_acceleration() -> float:
+	return _thrust
+
+
 ## Hold `velocity` (world space) instead of holding station over the ground.
 ##
 ## World space rather than relative to any body, deliberately: a cruise between

@@ -23,12 +23,13 @@ python/ppo.py  <--- JSON over TCP, one exchange per decision --->  rl/train.tscn
 | `rl/train_host.gd` | Headless host — loads `main.tscn`, strips the player, serves the socket |
 | `rl/train.tscn` | The scene the trainer runs |
 | `rl/neural_pilot.gd` | MLP forward pass in GDScript, loads `policy.json` |
-| `rl/autopilot.gd` | Flies the player's ship with a trained policy (`[P]` in the cockpit) |
+| `rl/autopilot.gd` | The autopilot stack: analytic transit, then the policy for descent (`[P]`) |
 | `python/godot_env.py` | Client for the socket protocol, Gym-shaped |
 | `python/ppo.py` | The trainer |
 | `python/evaluate.py` | Scores a controller against two baselines |
 | `python/smoke_test.py` | Checks the bridge before you spend an hour on a run |
 | `rl/cruise_check.tscn` | Checks that the assist can hold a velocity between bodies |
+| `rl/journey_check.tscn` | Flies whole journeys end to end, planet to planet |
 
 ## Setup
 
@@ -177,7 +178,9 @@ python evaluate.py --godot /path/to/Godot.exe --project .. --controller baseline
 python evaluate.py --godot /path/to/Godot.exe --project .. --controller policy
 ```
 
-Then fly it: get in the ship, get near a planet, press `[P]`.
+Then fly it: get in the ship, pick a destination with `[Tab]`, press `[P]`.
+It crosses the system on analytic guidance and hands over to the policy once
+inside the destination's influence; the HUD names the phase.
 
 ## The task
 

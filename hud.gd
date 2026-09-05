@@ -44,16 +44,22 @@ func _process(_delta: float) -> void:
 			ramp, beam, assist, auto, roundi(_ship.throttle * 100.0)]
 
 
-## State of the trained landing autopilot.
+## State of the autopilot.
 ##
 ## Shown even when there is no policy file, because the alternative is a key
-## that silently does nothing and no way to tell that from a broken one.
+## that silently does nothing and no way to tell that from a broken one. While
+## engaged it names the phase and the destination: a ship crossing the system
+## under transit guidance and one flying a descent look nothing alike from the
+## cockpit, and "AUTO" for both tells the player neither.
 func _autopilot_text() -> String:
 	var auto: ShipAutopilot = _ship.autopilot
 	if auto == null:
 		return "[P] autopilot n/a"
 	if auto.is_engaged:
-		return "[P] AUTOLAND"
+		return "[P] AUTO %s -> %s" % [
+			auto.phase_name(),
+			auto.destination.name if auto.destination != null else "?",
+		]
 	if not auto.is_available:
 		return "[P] autopilot untrained"
 	return "[P] autopilot"
