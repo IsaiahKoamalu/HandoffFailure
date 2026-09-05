@@ -718,10 +718,32 @@ have to reach the walls' **inner faces** — set a metre tight, an astronaut
 standing against the fore wall was on the deck and reported as not aboard, which
 would have handed them back to the planet mid-room.
 
-Leaving the seat while docked puts the astronaut in the station's airlock rather
-than at the ship's ramp: the ramp is a cargo door on the belly and the join is at
-the nose. The transfer itself is not simulated. Modelling a tunnel and a hatch
-buys nothing the player can see.
+### The airlock
+
+**The transfer is walked, not faded.** Out of the seat, forward through the
+ship's nose hatch, along the station's tunnel, through the doorway in the fore
+wall and onto the deck — on foot, through the same input path a player uses.
+
+Three things had to be true for that to work, and each was found by it not
+being:
+
+- **The ports are keyed.** `Ship.dock_roll` requires the two "up" axes to agree
+  to within a dot product of 0.9, and the `DOCK` phase rolls the ship onto the
+  station before it closes. Without it a ship can latch upside down relative to
+  the deck, and gravity reverses in the doorway.
+- **The two floors are flush.** The station's port sits at deck level rather
+  than on the hull's centreline, because the ship's port is at its cabin floor.
+  Anywhere else and the join is a step the astronaut has to climb.
+- **The frame volumes have to overlap, generously.** `Astronaut._pick_frame`
+  asks the ship first, so an airlock volume reaching back into where a docked
+  ship's nose sits costs nothing. Sizing it for a *perfect* latch does not work:
+  the latch tolerates two units of port-to-port error, so the join sits anywhere
+  in a two-unit band. Measured before it was sized for that — a 0.26-unit gap
+  where neither hull claimed the astronaut, who walked into it, stopped dead,
+  and flickered between the ship's frame and the star's twice a second.
+
+Both hatches open and close together, from `Ship._set_hatches`. They are one
+passage, and a hatch open at one end only is a hole onto vacuum.
 
 The agent flies through a seam on `Ship`, not around it:
 

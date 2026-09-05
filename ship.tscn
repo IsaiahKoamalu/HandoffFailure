@@ -30,10 +30,29 @@ roughness = 0.1
 
 [sub_resource type="BoxMesh" id="Mesh_glass"]
 material = SubResource("Mat_glass")
-size = Vector3(3.2, 2.4, 0.2)
+size = Vector3(3.2, 0.4, 0.2)
 
 [sub_resource type="BoxShape3D" id="Shape_glass"]
-size = Vector3(3.2, 2.4, 0.2)
+size = Vector3(3.2, 0.4, 0.2)
+
+[sub_resource type="BoxMesh" id="Mesh_nosecheek"]
+material = SubResource("Mat_hull")
+size = Vector3(0.7, 2, 0.2)
+
+[sub_resource type="BoxShape3D" id="Shape_nosecheek"]
+size = Vector3(0.7, 2, 0.2)
+
+[sub_resource type="StandardMaterial3D" id="Mat_hatch"]
+albedo_color = Color(0.34, 0.36, 0.4, 1)
+metallic = 0.5
+roughness = 0.55
+
+[sub_resource type="BoxMesh" id="Mesh_hatch"]
+material = SubResource("Mat_hatch")
+size = Vector3(1.8, 2, 0.2)
+
+[sub_resource type="BoxShape3D" id="Shape_hatch"]
+size = Vector3(1.8, 2, 0.2)
 
 [sub_resource type="StandardMaterial3D" id="Mat_ramp"]
 albedo_color = Color(0.28, 0.3, 0.34, 1)
@@ -72,7 +91,7 @@ radius = 1.8
 
 [sub_resource type="CapsuleMesh" id="CapsuleMesh_7rpyo"]
 
-[node name="Ship" type="RigidBody3D" unique_id=1341798101 node_paths=PackedStringArray("_camera", "_camera_pivot", "_ground_cast", "_exit_point", "_ramp", "_cockpit", "_cockpit_light_switch", "_cabin_light", "_headlight")]
+[node name="Ship" type="RigidBody3D" unique_id=1341798101 node_paths=PackedStringArray("_camera", "_camera_pivot", "_ground_cast", "_exit_point", "_ramp", "_cockpit", "_cockpit_light_switch", "_cabin_light", "_headlight", "nose_hatch")]
 collision_layer = 2
 collision_mask = 3
 mass = 200.0
@@ -86,6 +105,7 @@ _cockpit = NodePath("Cockpit")
 _cockpit_light_switch = NodePath("LightSwitchCabin")
 _cabin_light = NodePath("LightSwitchCabin/CabinLight")
 _headlight = NodePath("CameraPivot/SpotLight3D")
+nose_hatch = NodePath("NoseHatch")
 
 [node name="Floor" type="MeshInstance3D" parent="." unique_id=1815063688]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, 0)
@@ -120,12 +140,35 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.6, 1.2, 0)
 shape = SubResource("Shape_wall")
 
 [node name="Windshield" type="MeshInstance3D" parent="." unique_id=1765456055]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.2, -2.6)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.2, -2.6)
 mesh = SubResource("Mesh_glass")
 
 [node name="WindshieldShape" type="CollisionShape3D" parent="." unique_id=47967933]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.2, -2.6)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.2, -2.6)
 shape = SubResource("Shape_glass")
+
+[node name="NoseCheekLeft" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.25, 1, -2.6)
+mesh = SubResource("Mesh_nosecheek")
+
+[node name="NoseCheekLeftShape" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.25, 1, -2.6)
+shape = SubResource("Shape_nosecheek")
+
+[node name="NoseCheekRight" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.25, 1, -2.6)
+mesh = SubResource("Mesh_nosecheek")
+
+[node name="NoseCheekRightShape" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.25, 1, -2.6)
+shape = SubResource("Shape_nosecheek")
+
+[node name="NoseHatch" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, -2.6)
+mesh = SubResource("Mesh_hatch")
+
+[node name="Shape" type="CollisionShape3D" parent="NoseHatch"]
+shape = SubResource("Shape_hatch")
 
 [node name="StrutFL" type="MeshInstance3D" parent="." unique_id=1828703318]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.3, -0.8, -1.8)

@@ -123,6 +123,10 @@ const DOCK_COMMIT_ALIGN: float = -0.95
 const DOCK_VELOCITY_GAIN: float = 0.3
 const DOCK_TURN_GAIN: float = 2.5
 const DOCK_SPIN_GAIN: float = 1.2
+## Gain rolling the ship's up onto the station's. Ports are keyed, and the
+## astronaut walks through the join -- a ship latched upside down relative to
+## the deck would have gravity reverse in the doorway.
+const DOCK_ROLL_GAIN: float = 2.0
 
 signal engaged_changed(engaged: bool)
 
@@ -472,13 +476,17 @@ func _run_dock(station: Station) -> void:
 	)
 
 	# The ship's port is on its nose, so the nose has to end up pointing back
-	# down the corridor -- along the inward normal.
+	# down the corridor -- along the inward normal. Pitch and yaw do that.
 	var d: Vector3 = _to_local(-normal).normalized()
 	var spin: Vector3 = _to_local(_ship.angular_velocity)
+	# Roll is a separate axis and a separate job: bring the ship's own up onto
+	# the station's. Rolling about local +Z carries +Y toward -X, so a station
+	# up leaning toward +X wants a negative command.
+	var up: Vector3 = _to_local(station.global_basis.y)
 	_command_turn = Vector3(
 		clampf(d.y * DOCK_TURN_GAIN - spin.x * DOCK_SPIN_GAIN, -1.0, 1.0),
 		clampf(-d.x * DOCK_TURN_GAIN - spin.y * DOCK_SPIN_GAIN, -1.0, 1.0),
-		clampf(-spin.z * DOCK_SPIN_GAIN, -1.0, 1.0),
+		clampf(-up.x * DOCK_ROLL_GAIN - spin.z * DOCK_SPIN_GAIN, -1.0, 1.0),
 	)
 	_ship.command_thrust = _command_thrust
 	_ship.command_turn = _command_turn

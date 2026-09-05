@@ -26,7 +26,7 @@ class_name DockingEnv
 ## that planet's surface — which is not the station's frame. That mismatch is
 ## real and the policy has to fly through it, exactly as a player would.
 
-const OBS_SIZE: int = 22
+const OBS_SIZE: int = 25
 
 # Episode outcomes. RUNNING is the base class's; these number upward from it.
 const DOCKED: int = 1
@@ -66,6 +66,10 @@ const AGENT_LAYER: int = 1 << 9
 @export var dock_align: float = -0.9
 ## How far off the centreline contact may be.
 @export var dock_lateral: float = 1.0
+## How closely the two "up" axes must agree, as a dot product. Kept in step with
+## Ship.dock_roll: the astronaut walks through the join, and a ship latched
+## upside down relative to the deck would have gravity reverse in the doorway.
+@export var dock_roll: float = 0.9
 
 @export_category("Spawns")
 ## Spawn shell around the port, as multiples of the station's approach range.
@@ -107,6 +111,10 @@ const AGENT_LAYER: int = 1 << 9
 @export var lateral_weight: float = 1.5
 ## Weight on facing the port.
 @export var align_weight: float = 0.6
+## Weight on rolling the ship's up onto the station's. Half the facing weight:
+## it is a real gate but a cheap one to satisfy, and over-weighting it makes the
+## policy roll before it has finished pointing.
+@export var roll_weight: float = 0.3
 ## Weight on not spinning. A ship that arrives perfectly while tumbling cannot
 ## latch, and without this the policy has no reason to stop the rotation it was
 ## spawned with.
@@ -334,6 +342,13 @@ static func build_observation(
 		SolarSystem.Instance.get_acceleration_at_position(
 			ship.global_position
 		).length() / 10.0, 0.0, 2.0)
+	# The station's up, in the ship's frame. Ports are keyed, so pointing at the
+	# hole is not enough -- the ship has to arrive the same way up as the deck,
+	# and without these three channels which way that is cannot be seen at all.
+	var up_local: Vector3 = inverse * station.global_basis.y
+	into[at + 22] = up_local.x
+	into[at + 23] = up_local.y
+	into[at + 24] = up_local.z
 
 
 # --- Reward ------------------------------------------------------------------
@@ -352,9 +367,13 @@ func _compute_potential(i: int) -> float:
 	# Alignment runs -1 (faces meeting) to +1 (back turned), so `1 + alignment`
 	# is an error that is zero when correct — the same shape as every other
 	# term here, which is what keeps the weights comparable.
+	# Roll error is 1 - dot for the same reason facing error is 1 + dot: both
+	# are zero when correct, which is what keeps the weights comparable.
+	var roll: float = ship.global_basis.y.dot(station.global_basis.y)
 	return -range_weight * (distance / scale) \
 		- lateral_weight * (lateral / scale) \
 		- align_weight * (1.0 + alignment) \
+		- roll_weight * (1.0 - roll) \
 		- spin_weight * (ship.angular_velocity.length() / RATE_SCALE)
 
 
@@ -399,7 +418,8 @@ func step_result(i: int, action: PackedFloat32Array, at: int) -> Array:
 	if distance <= dock_radius:
 		var clean: bool = speed <= dock_speed \
 			and alignment <= dock_align \
-			and lateral <= dock_lateral
+			and lateral <= dock_lateral \
+			and ship.global_basis.y.dot(station.global_basis.y) >= dock_roll
 		# Graded, not pass/fail. A touch just outside the gate and a ten-metre-
 		# a-second arrival are not the same mistake, and scoring them the same
 		# leaves nothing to follow back to a dock. Landing paid for this lesson

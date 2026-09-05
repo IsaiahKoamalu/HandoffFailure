@@ -112,18 +112,47 @@ func _run() -> void:
 	_check("stays latched for 30s", _ship.docked_to == _station and drift < 0.05,
 		"drift %.4f units in the station's frame" % drift)
 
-	# --- The astronaut -------------------------------------------------------
+	# --- The astronaut walks across ------------------------------------------
+	# The transfer is simulated: no teleport, no fade. Out of the seat, forward
+	# through the nose hatch, along the tunnel and into the room, on foot,
+	# through the same input path a player uses.
 	_ship.set_piloted(true)
 	_ship.disembark()
-	await _settle(120)
-	var arrival: Vector3 = _local(_astronaut.global_position)
-	_check("astronaut arrives inside the station",
-		_station.contains_point(_astronaut.global_position),
-		"at %.1f, %.1f, %.1f in the station's frame"
-			% [arrival.x, arrival.y, arrival.z])
-	_check("astronaut rides the station's frame",
-		_astronaut.get_parent() == _station,
+	await _settle(90)
+	_check("astronaut starts in the ship", _astronaut.get_parent() == _ship,
 		"parent is %s" % _astronaut.get_parent().name)
+	_check("hatches open when docked",
+		not _ship.nose_hatch.visible and not _station.hatch.visible, "")
+
+	# Walking there. The frames are watched the whole way: a gap between the
+	# ship's volume and the station's would hand the astronaut to the planet
+	# four hundred units below, mid-stride, and that does not look like a bug so
+	# much as a stumble.
+	var frames := {}
+	var handed_to_planet: bool = false
+	Input.action_press("move_forward")
+	for i in 360:
+		await get_tree().physics_frame
+		var parent: Node = _astronaut.get_parent()
+		frames[parent.name] = true
+		if parent is Planet or parent is SolarSystem:
+			handed_to_planet = true
+		if i % 90 == 0:
+			var at: Vector3 = _local(_astronaut.global_position)
+			print("    t=%3d  station-local z %6.2f   frame %s" % [i, at.z, parent.name])
+	Input.action_release("move_forward")
+	await _settle(60)
+
+	var here: Vector3 = _local(_astronaut.global_position)
+	_check("walked out of the ship and into the station",
+		_astronaut.get_parent() == _station,
+		"parent is %s, at %.1f, %.1f, %.1f in the station's frame"
+			% [_astronaut.get_parent().name, here.x, here.y, here.z])
+	_check("never handed to the planet on the way", not handed_to_planet,
+		"frames seen: %s" % ", ".join(PackedStringArray(frames.keys())))
+	_check("reached the room, not just the tunnel",
+		absf(here.z) <= _station.interior_extents.z, "z %.1f" % here.z)
+	_check("is on the ground", _astronaut.is_on_floor(), "")
 
 	# Standing still means standing still relative to the room, not the star.
 	var floor_local: Vector3 = _local(_astronaut.global_position)
@@ -131,24 +160,8 @@ func _run() -> void:
 	var slide: float = (_local(_astronaut.global_position) - floor_local).length()
 	_check("stands still on the deck", slide < 0.5,
 		"moved %.3f units in ten seconds" % slide)
-	_check("is on the ground", _astronaut.is_on_floor(), "")
 
-	# ...and can walk, driven through the real input path rather than by writing
-	# `velocity` directly -- _physics_process recomputes that from the input
-	# every tick, so an injected value is overwritten before it moves anything.
-	var before: Vector3 = _local(_astronaut.global_position)
-	Input.action_press("move_forward")
-	await _settle(180)
-	Input.action_release("move_forward")
-	await _settle(30)
-	var walked: float = (_local(_astronaut.global_position) - before).length()
-	_check("walks across the deck", walked > 2.0,
-		"%.1f units in three seconds" % walked)
-	_check("still aboard after walking",
-		_station.contains_point(_astronaut.global_position), "")
-	_check("still on the deck after walking", _astronaut.is_on_floor(), "")
-
-	# The deck has to hold up everywhere, not only where the airlock puts you.
+	# The deck has to hold up everywhere, not only on the walk in.
 	var solid: int = 0
 	for spot in [Vector3(5.0, -2.5, 6.0), Vector3(-5.0, -2.5, -6.0),
 			Vector3(0.0, -2.5, 8.5), Vector3(5.5, -2.5, -8.0)]:
@@ -162,7 +175,13 @@ func _run() -> void:
 
 	# --- Undocking -----------------------------------------------------------
 	_ship.undock()
-	_check("undocking inherits the station's motion",
-		(_ship.linear_velocity - _station.constant_linear_velocity).length() < 0.01,
-		"%.3f units/s relative" % (_ship.linear_velocity
-			- _station.constant_linear_velocity).length())
+	# Measured before any time passes: the station is on a circular orbit, so
+	# its velocity vector turns every tick and comparing a frame later measures
+	# that rotation rather than the handover.
+	var inherited: float = (_ship.linear_velocity
+		- _station.constant_linear_velocity).length()
+	await _settle(2)
+	_check("hatches close on release",
+		_ship.nose_hatch.visible and _station.hatch.visible, "")
+	_check("undocking inherits the station's motion", inherited < 0.01,
+		"%.4f units/s relative" % inherited)

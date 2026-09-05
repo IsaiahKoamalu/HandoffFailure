@@ -29,7 +29,11 @@ class_name Station
 
 @export_category("Docking")
 ## Where the port sits, in the station's own frame.
-@export var port_offset: Vector3 = Vector3(0.0, 0.0, -14.0)
+##
+## At deck level, not at the hull's centreline. A ship's port is at its cabin
+## floor, so putting this anywhere else means the two floors meet at a step —
+## and the astronaut walks between them.
+@export var port_offset: Vector3 = Vector3(0.0, -4.0, -14.0)
 ## Outward normal of the port face, in the station's own frame: the direction a
 ## ship approaches *from*. A docking ship travels along the negative of this.
 @export var port_axis: Vector3 = Vector3(0.0, 0.0, -1.0)
@@ -62,9 +66,26 @@ class_name Station
 ## reparents into it and walks about while the whole room orbits a planet at
 ## eight units a second, and never has to know that.
 @export var deck_gravity: float = 9.81
-## Where an astronaut arriving through the airlock is put down, as a node in the
-## station so it can be placed by eye in the editor.
-@export var airlock: Node3D
+## The passage from the port to the room: half-extents and centre, in the
+## station's own frame.
+##
+## Counted as interior, so an astronaut in the tunnel rides the station. It
+## deliberately reaches well *past* the port, into where a docked ship's nose
+## sits: `Astronaut._pick_frame` asks the ship first, so the overlap costs
+## nothing, and without it there is a band where neither volume claims the
+## doorway and the astronaut is handed back to the planet mid-step.
+##
+## How far past is not a guess. The latch tolerates two units of port-to-port
+## error, so the join sits anywhere in a two-unit band and a volume sized for a
+## perfect latch misses it. Measured before this was sized properly: a 0.26-unit
+## gap the astronaut walked into and stopped dead in, flickering between the
+## ship's frame and the star's twice a second.
+@export var airlock_extents: Vector3 = Vector3(1.0, 1.0, 2.75)
+@export var airlock_center: Vector3 = Vector3(0.0, -3.0, -13.75)
+## The hatch panel closing the tunnel off from vacuum. Hidden and un-collided
+## while a ship is docked, which is the whole of what "the airlock is open"
+## means here.
+@export var hatch: Node3D
 
 # `constant_linear_velocity` is StaticBody3D's own field, written here the same
 # way Planet writes it: it is what a body's own motion is read from everywhere
@@ -124,10 +145,28 @@ func port_normal() -> Vector3:
 ## job as Ship.contains_point, because the astronaut asks both the same
 ## question when it decides what it is standing in.
 func contains_point(world_pos: Vector3) -> bool:
-	var local: Vector3 = global_basis.inverse() * (world_pos - global_position) - interior_center
-	return absf(local.x) <= interior_extents.x \
-		and absf(local.y) <= interior_extents.y \
-		and absf(local.z) <= interior_extents.z
+	var local: Vector3 = global_basis.inverse() * (world_pos - global_position)
+	return _within(local, interior_center, interior_extents) \
+		or _within(local, airlock_center, airlock_extents)
+
+
+static func _within(local: Vector3, centre: Vector3, extents: Vector3) -> bool:
+	var d: Vector3 = local - centre
+	return absf(d.x) <= extents.x and absf(d.y) <= extents.y and absf(d.z) <= extents.z
+
+
+## Open or close the airlock hatch. Called by the ship as it latches and lets
+## go, so the passage exists exactly while there is something on the other side
+## of it.
+func set_hatch_open(open: bool) -> void:
+	if hatch == null:
+		return
+	hatch.visible = not open
+	for child in hatch.get_children():
+		if child is CollisionShape3D:
+			(child as CollisionShape3D).set_deferred("disabled", open)
+	if hatch is CollisionShape3D:
+		(hatch as CollisionShape3D).set_deferred("disabled", open)
 
 
 ## World-space velocity of the deck at a point, matching Planet's and Ship's
@@ -151,14 +190,6 @@ func _on_board_activated(_who: Node3D) -> void:
 	var ship := docked_ship()
 	if ship != null:
 		ship.board()
-
-
-## Where to put an astronaut coming aboard.
-func airlock_transform() -> Transform3D:
-	if airlock != null:
-		return airlock.global_transform
-	# No marker placed: the middle of the room, standing the right way up.
-	return Transform3D(global_basis, global_position + global_basis * interior_center)
 
 
 ## Velocity of the port itself. Equal to the station's, because the station does

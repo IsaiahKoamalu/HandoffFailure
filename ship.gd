@@ -504,8 +504,10 @@ func _process_flight_assist(dominant: Planet, movement: Vector3) -> void:
 # ends of the join the same three questions and never has to know which is
 # which.
 
-## Where the ship's port sits, in its own frame. On the nose, which is -Z.
-@export var port_offset: Vector3 = Vector3(0.0, 0.0, -3.0)
+## Where the ship's port sits, in its own frame. On the nose, which is -Z, and
+## flush with the outer face of it: anything sticking out in front would be
+## inside the station's docking tunnel when the two faces meet.
+@export var port_offset: Vector3 = Vector3(0.0, 0.0, -2.7)
 ## Outward normal of the port face, in the ship's own frame.
 @export var port_axis: Vector3 = Vector3(0.0, 0.0, -1.0)
 
@@ -520,6 +522,16 @@ func _process_flight_assist(dominant: Planet, movement: Vector3) -> void:
 @export var dock_align: float = -0.9
 ## How far off the centreline contact may be.
 @export var dock_lateral: float = 1.0
+## How closely the two "up" axes must agree, as a dot product.
+##
+## Not decoration. The astronaut walks through the join, and a ship latched
+## upside down relative to the deck would have gravity reverse in the doorway.
+## Real ports are keyed for the same reason.
+@export var dock_roll: float = 0.9
+
+## The nose hatch. Hidden and un-collided while docked, which is the whole of
+## what "the airlock is open" means here.
+@export var nose_hatch: Node3D
 
 ## The station this ship is latched to, or null. Kept in step with
 ## DockingEnv's tolerances above -- the training task and the game have to
@@ -568,8 +580,11 @@ func try_dock(station: Station) -> bool:
 		return false
 	if (port_velocity() - station.port_velocity()).length() > dock_speed:
 		return false
+	if global_basis.y.dot(station.global_basis.y) < dock_roll:
+		return false
 
 	docked_to = station
+	_set_hatches(true)
 	# Held in the station's frame, the same trick _process_parking uses to ride
 	# a planet's surface: the station orbits at eight units a second and a hull
 	# pinned in world space would be left behind immediately.
@@ -581,12 +596,25 @@ func try_dock(station: Station) -> bool:
 	return true
 
 
+## Open or close both ends of the join together. They are one passage and a
+## hatch open on one side only is a hole onto vacuum.
+func _set_hatches(open: bool) -> void:
+	if nose_hatch != null:
+		nose_hatch.visible = not open
+		for child in nose_hatch.get_children():
+			if child is CollisionShape3D:
+				(child as CollisionShape3D).set_deferred("disabled", open)
+	if docked_to != null and is_instance_valid(docked_to):
+		docked_to.set_hatch_open(open)
+
+
 func undock() -> void:
 	if docked_to == null:
 		return
 	# Inherit the station's motion on release, or the ship is instantly doing
 	# eight units a second relative to the thing it just let go of.
 	linear_velocity = docked_to.constant_linear_velocity
+	_set_hatches(false)
 	docked_to = null
 
 
@@ -600,6 +628,7 @@ func _process_docking(movement: Vector3) -> void:
 		return
 	if not is_instance_valid(docked_to):
 		docked_to = null
+		_set_hatches(false)
 		return
 	if movement != Vector3.ZERO:
 		undock()
@@ -751,14 +780,7 @@ func board() -> void:
 ## on the ground: the cabin has its own gravity, so it is safe to walk around.
 func disembark() -> void:
 	set_piloted(false)
-	# Docked, the ramp is a cargo door on the belly pointing at open space while
-	# the join is at the nose, so leaving the seat goes through the airlock
-	# instead. The transfer itself is not simulated -- the alternative is
-	# modelling a tunnel and a hatch, which buys nothing the player can see.
-	if docked_to != null:
-		_astronaut.place_at(docked_to.airlock_transform())
-	else:
-		_astronaut.place_at(_exit_point.global_transform)
+	_astronaut.place_at(_exit_point.global_transform)
 	_astronaut.set_active(true)
 
 

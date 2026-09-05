@@ -90,6 +90,7 @@ D_ALIGN = 12
 D_AXIAL = 13
 D_LATERAL = 14
 D_SPIN = slice(15, 18)
+D_UP = slice(22, 25)
 
 # Speed to close at, per unit of distance to the point being flown to, in
 # observation units (SPEED_SCALE = 20 units/s per unit, approach_range = 60
@@ -133,6 +134,10 @@ DOCK_VELOCITY_GAIN = 6.0
 # Gain turning the pointing error into a turn rate, and the one damping spin.
 DOCK_TURN_GAIN = 2.5
 DOCK_SPIN_GAIN = 1.2
+# Gain rolling the ship's up onto the station's. Ports are keyed, and the
+# astronaut walks through the join -- a ship latched upside down relative to the
+# deck would have gravity reverse in the doorway.
+DOCK_ROLL_GAIN = 2.0
 # Lateral offset, in approach ranges, at which closing is throttled to nothing.
 # 0.025 of a 60-unit range is 1.5 units, against a 1.0-unit gate at contact.
 #
@@ -217,7 +222,12 @@ def dock_baseline_controller(obs: np.ndarray) -> np.ndarray:
     spin = obs[:, D_SPIN]
     action[:, 3] = np.clip(d[:, 1] * DOCK_TURN_GAIN - spin[:, 0] * DOCK_SPIN_GAIN, -1.0, 1.0)
     action[:, 4] = np.clip(-d[:, 0] * DOCK_TURN_GAIN - spin[:, 1] * DOCK_SPIN_GAIN, -1.0, 1.0)
-    action[:, 5] = np.clip(-spin[:, 2] * DOCK_SPIN_GAIN, -1.0, 1.0)
+    # Roll is a separate axis and a separate job: bring the ship's own up onto
+    # the station's. Rolling about local +Z carries +Y toward -X, so a station
+    # up leaning toward +X wants a negative command.
+    up = obs[:, D_UP]
+    action[:, 5] = np.clip(
+        -up[:, 0] * DOCK_ROLL_GAIN - spin[:, 2] * DOCK_SPIN_GAIN, -1.0, 1.0)
     return action
 
 

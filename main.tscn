@@ -70,11 +70,52 @@ emission_enabled = true
 emission = Color(0.95, 0.45, 0.1, 1)
 emission_energy_multiplier = 2.0
 
-[sub_resource type="CylinderMesh" id="CylinderMesh_port"]
+[sub_resource type="TorusMesh" id="TorusMesh_port"]
 material = SubResource("StandardMaterial3D_port")
-top_radius = 2.4
-bottom_radius = 3.2
-height = 2.0
+inner_radius = 1.5
+outer_radius = 1.9
+
+[sub_resource type="BoxMesh" id="BoxMesh_forewide"]
+material = SubResource("StandardMaterial3D_station")
+size = Vector3(7, 9, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_forewide"]
+size = Vector3(7, 9, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_foretop"]
+material = SubResource("StandardMaterial3D_station")
+size = Vector3(2, 5.9, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_foretop"]
+size = Vector3(2, 5.9, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_forebottom"]
+material = SubResource("StandardMaterial3D_station")
+size = Vector3(2, 1.1, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_forebottom"]
+size = Vector3(2, 1.1, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_tunneldeck"]
+material = SubResource("StandardMaterial3D_deck")
+size = Vector3(2.8, 0.4, 3)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_tunneldeck"]
+size = Vector3(2.8, 0.4, 3)
+
+[sub_resource type="BoxMesh" id="BoxMesh_tunnelwall"]
+material = SubResource("StandardMaterial3D_station")
+size = Vector3(0.4, 2.4, 3)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_tunnelwall"]
+size = Vector3(0.4, 2.4, 3)
+
+[sub_resource type="BoxMesh" id="BoxMesh_hatch"]
+material = SubResource("StandardMaterial3D_port")
+size = Vector3(2, 2, 0.3)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_hatch"]
+size = Vector3(2, 2, 0.3)
 
 [sub_resource type="PanoramaSkyMaterial" id="PanoramaSkyMaterial_lquwl"]
 panorama = ExtResource("4_1bvp3")
@@ -215,14 +256,14 @@ mesh = SubResource("SphereMesh_1bvp3")
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Planet3" unique_id=498119634]
 shape = SubResource("SphereShape3D_lquwl")
 
-[node name="Station1" type="StaticBody3D" parent="." node_paths=PackedStringArray("orbital_parent", "airlock")]
+[node name="Station1" type="StaticBody3D" parent="." node_paths=PackedStringArray("orbital_parent", "hatch")]
 script = ExtResource("8_station")
 orbital_parent = NodePath("../Planet1")
 orbital_radius = 420.0
 orbital_angle = 40.0
 orbital_period = 300.0
 hull_extents = Vector3(8, 5, 12)
-airlock = NodePath("Airlock")
+hatch = NodePath("Hatch")
 
 [node name="Floor" type="MeshInstance3D" parent="Station1"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -4.5, 0)
@@ -256,13 +297,81 @@ mesh = SubResource("BoxMesh_wallx")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 7.5, -0.6, 0)
 shape = SubResource("BoxShape3D_wallx")
 
-[node name="WallFore" type="MeshInstance3D" parent="Station1"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.6, -11.5)
-mesh = SubResource("BoxMesh_wallz")
+[node name="WallForeLeft" type="MeshInstance3D" parent="Station1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.5, -0.6, -11.5)
+mesh = SubResource("BoxMesh_forewide")
 
-[node name="WallForeShape" type="CollisionShape3D" parent="Station1"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.6, -11.5)
-shape = SubResource("BoxShape3D_wallz")
+[node name="WallForeLeftShape" type="CollisionShape3D" parent="Station1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.5, -0.6, -11.5)
+shape = SubResource("BoxShape3D_forewide")
+
+[node name="WallForeRight" type="MeshInstance3D" parent="Station1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4.5, -0.6, -11.5)
+mesh = SubResource("BoxMesh_forewide")
+
+[node name="WallForeRightShape" type="CollisionShape3D" parent="Station1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4.5, -0.6, -11.5)
+shape = SubResource("BoxShape3D_forewide")
+
+[node name="WallForeTop" type="MeshInstance3D" parent="Station1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.95, -11.5)
+mesh = SubResource("BoxMesh_foretop")
+
+[node name="WallForeTopShape" type="CollisionShape3D" parent="Station1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.95, -11.5)
+shape = SubResource("BoxShape3D_foretop")
+
+[node name="WallForeBottom" type="MeshInstance3D" parent="Station1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -4.55, -11.5)
+mesh = SubResource("BoxMesh_forebottom")
+
+[node name="WallForeBottomShape" type="CollisionShape3D" parent="Station1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -4.55, -11.5)
+shape = SubResource("BoxShape3D_forebottom")
+
+[node name="TunnelFloor" type="MeshInstance3D" parent="Station1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -4.2, -12.5)
+mesh = SubResource("BoxMesh_tunneldeck")
+
+[node name="TunnelFloorShape" type="CollisionShape3D" parent="Station1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -4.2, -12.5)
+shape = SubResource("BoxShape3D_tunneldeck")
+
+[node name="TunnelRoof" type="MeshInstance3D" parent="Station1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1.8, -12.5)
+mesh = SubResource("BoxMesh_tunneldeck")
+
+[node name="TunnelRoofShape" type="CollisionShape3D" parent="Station1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1.8, -12.5)
+shape = SubResource("BoxShape3D_tunneldeck")
+
+[node name="TunnelWallLeft" type="MeshInstance3D" parent="Station1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.2, -3, -12.5)
+mesh = SubResource("BoxMesh_tunnelwall")
+
+[node name="TunnelWallLeftShape" type="CollisionShape3D" parent="Station1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.2, -3, -12.5)
+shape = SubResource("BoxShape3D_tunnelwall")
+
+[node name="TunnelWallRight" type="MeshInstance3D" parent="Station1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.2, -3, -12.5)
+mesh = SubResource("BoxMesh_tunnelwall")
+
+[node name="TunnelWallRightShape" type="CollisionShape3D" parent="Station1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.2, -3, -12.5)
+shape = SubResource("BoxShape3D_tunnelwall")
+
+[node name="Hatch" type="MeshInstance3D" parent="Station1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -3, -13.85)
+mesh = SubResource("BoxMesh_hatch")
+
+[node name="Shape" type="CollisionShape3D" parent="Station1/Hatch"]
+shape = SubResource("BoxShape3D_hatch")
+
+[node name="TunnelLight" type="OmniLight3D" parent="Station1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -2.4, -12.5)
+light_energy = 1.6
+omni_range = 8.0
 
 [node name="WallAft" type="MeshInstance3D" parent="Station1"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.6, 11.5)
@@ -273,19 +382,16 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.6, 11.5)
 shape = SubResource("BoxShape3D_wallz")
 
 [node name="PortMarker" type="MeshInstance3D" parent="Station1"]
-transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0, -13)
-mesh = SubResource("CylinderMesh_port")
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, -3, -14.05)
+mesh = SubResource("TorusMesh_port")
 
 [node name="DeckLight" type="OmniLight3D" parent="Station1"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2, 0)
 light_energy = 2.5
 omni_range = 26.0
 
-[node name="Airlock" type="Node3D" parent="Station1"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -3, -8)
-
 [node name="BoardControl" type="Area3D" parent="Station1"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -3, -9.4)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -3, -10.2)
 collision_layer = 4
 collision_mask = 0
 script = ExtResource("2_inter")
