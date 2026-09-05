@@ -7,6 +7,7 @@
 [ext_resource type="PackedScene" path="res://astronaut.tscn" id="6_astro"]
 [ext_resource type="Script" uid="uid://itno6mhiwwrj" path="res://hud.gd" id="7_hud"]
 [ext_resource type="Script" path="res://station.gd" id="8_station"]
+[ext_resource type="Script" path="res://interactable.gd" id="2_inter"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_0xm2m"]
 shading_mode = 0
@@ -35,12 +36,33 @@ albedo_color = Color(0.62, 0.64, 0.68, 1)
 metallic = 0.7
 roughness = 0.45
 
-[sub_resource type="BoxMesh" id="BoxMesh_station"]
-material = SubResource("StandardMaterial3D_station")
-size = Vector3(16, 10, 24)
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_deck"]
+albedo_color = Color(0.3, 0.32, 0.36, 1)
+roughness = 0.85
 
-[sub_resource type="BoxShape3D" id="BoxShape3D_station"]
-size = Vector3(16, 10, 24)
+[sub_resource type="BoxMesh" id="BoxMesh_deck"]
+material = SubResource("StandardMaterial3D_deck")
+size = Vector3(16, 1, 24)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_deck"]
+size = Vector3(16, 1, 24)
+
+[sub_resource type="BoxMesh" id="BoxMesh_wallx"]
+material = SubResource("StandardMaterial3D_station")
+size = Vector3(1, 9, 24)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_wallx"]
+size = Vector3(1, 9, 24)
+
+[sub_resource type="BoxMesh" id="BoxMesh_wallz"]
+material = SubResource("StandardMaterial3D_station")
+size = Vector3(16, 9, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_wallz"]
+size = Vector3(16, 9, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_reach"]
+size = Vector3(2.4, 2.4, 2.4)
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_port"]
 albedo_color = Color(0.95, 0.55, 0.15, 1)
@@ -193,23 +215,84 @@ mesh = SubResource("SphereMesh_1bvp3")
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Planet3" unique_id=498119634]
 shape = SubResource("SphereShape3D_lquwl")
 
-[node name="Station1" type="StaticBody3D" parent="." node_paths=PackedStringArray("orbital_parent")]
+[node name="Station1" type="StaticBody3D" parent="." node_paths=PackedStringArray("orbital_parent", "airlock")]
 script = ExtResource("8_station")
 orbital_parent = NodePath("../Planet1")
 orbital_radius = 420.0
 orbital_angle = 40.0
 orbital_period = 300.0
 hull_extents = Vector3(8, 5, 12)
+airlock = NodePath("Airlock")
 
-[node name="Hull" type="MeshInstance3D" parent="Station1"]
-mesh = SubResource("BoxMesh_station")
+[node name="Floor" type="MeshInstance3D" parent="Station1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -4.5, 0)
+mesh = SubResource("BoxMesh_deck")
 
-[node name="HullShape" type="CollisionShape3D" parent="Station1"]
-shape = SubResource("BoxShape3D_station")
+[node name="FloorShape" type="CollisionShape3D" parent="Station1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -4.5, 0)
+shape = SubResource("BoxShape3D_deck")
+
+[node name="Roof" type="MeshInstance3D" parent="Station1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.3, 0)
+mesh = SubResource("BoxMesh_deck")
+
+[node name="RoofShape" type="CollisionShape3D" parent="Station1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.3, 0)
+shape = SubResource("BoxShape3D_deck")
+
+[node name="WallLeft" type="MeshInstance3D" parent="Station1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7.5, -0.6, 0)
+mesh = SubResource("BoxMesh_wallx")
+
+[node name="WallLeftShape" type="CollisionShape3D" parent="Station1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7.5, -0.6, 0)
+shape = SubResource("BoxShape3D_wallx")
+
+[node name="WallRight" type="MeshInstance3D" parent="Station1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 7.5, -0.6, 0)
+mesh = SubResource("BoxMesh_wallx")
+
+[node name="WallRightShape" type="CollisionShape3D" parent="Station1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 7.5, -0.6, 0)
+shape = SubResource("BoxShape3D_wallx")
+
+[node name="WallFore" type="MeshInstance3D" parent="Station1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.6, -11.5)
+mesh = SubResource("BoxMesh_wallz")
+
+[node name="WallForeShape" type="CollisionShape3D" parent="Station1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.6, -11.5)
+shape = SubResource("BoxShape3D_wallz")
+
+[node name="WallAft" type="MeshInstance3D" parent="Station1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.6, 11.5)
+mesh = SubResource("BoxMesh_wallz")
+
+[node name="WallAftShape" type="CollisionShape3D" parent="Station1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.6, 11.5)
+shape = SubResource("BoxShape3D_wallz")
 
 [node name="PortMarker" type="MeshInstance3D" parent="Station1"]
 transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0, -13)
 mesh = SubResource("CylinderMesh_port")
+
+[node name="DeckLight" type="OmniLight3D" parent="Station1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2, 0)
+light_energy = 2.5
+omni_range = 26.0
+
+[node name="Airlock" type="Node3D" parent="Station1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -3, -8)
+
+[node name="BoardControl" type="Area3D" parent="Station1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -3, -9.4)
+collision_layer = 4
+collision_mask = 0
+script = ExtResource("2_inter")
+prompt = "Board ship"
+
+[node name="Shape" type="CollisionShape3D" parent="Station1/BoardControl"]
+shape = SubResource("BoxShape3D_reach")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1313021977]
 environment = SubResource("Environment_ig7tw")
@@ -285,3 +368,5 @@ theme_override_font_sizes/font_size = 30
 text = "Exit"
 
 [connection signal="pressed" from="HUD/button_quit" to="." method="_on_button_quit_pressed"]
+
+[connection signal="activated" from="Station1/BoardControl" to="Station1" method="_on_board_activated"]

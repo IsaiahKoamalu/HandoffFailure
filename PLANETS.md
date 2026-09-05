@@ -647,7 +647,8 @@ answers only the second:
 | Phase | Controller | Where |
 | --- | --- | --- |
 | `TRANSIT` | analytic guidance | anywhere, deep space included |
-| `DESCENT` | the trained policy | inside the destination's sphere of influence |
+| `DESCENT` | the trained policy | inside a planet's sphere of influence |
+| `DOCK` | analytic guidance | onto a station's port |
 
 A `Station` is deliberately not a `Planet`. Giving it gravity would make it a
 fourth body pulling on the ship, and giving it a capture radius would overlap
@@ -682,6 +683,45 @@ engines do the work and burn for it.
 
 `rl/journey_check.tscn` flies the whole thing end to end — deep space to a
 planet, planet to planet, and both refusals — through the real `main.tscn` ship.
+`rl/dock_check.tscn` does the same for a station, and then walks the astronaut
+around inside it.
+
+## Docking and stations
+
+`[Tab]` cycles stations alongside planets, so "go there" needs no new control.
+`SolarSystem.target` is a `Node3D` rather than a `Planet`, and the two things
+anything wants of a target — how big it is and how fast it is moving — are
+dispatched through `target_radius()` and `target_velocity()`. That is deliberate
+in the same way `Station` not being a `Planet` is: the alternative is giving a
+station gravity and terrain so it fits an existing type.
+
+**The latch is a test, not a snap.** `Ship.try_dock` checks range, lateral
+offset, alignment and relative speed, and returns false if any of them is out —
+a ship that arrives crooked bounces off the hull. Pulling it into alignment
+because it got close would make the whole approach pointless. The tolerances
+match `DockingEnv`'s exactly; if they drift apart, a policy is scored on a
+different event than the one it causes.
+
+Docked, the hull is held in the **station's** frame, the same trick
+`_process_parking` uses to ride a planet's surface. The station orbits at eight
+units a second and a hull pinned in world space is left behind immediately.
+Undocking hands the station's velocity back to the ship, or it would be doing
+eight units a second relative to the thing it just released. Any thrust input
+releases the latch, for the same reason touching the controls takes the ship
+back from the autopilot.
+
+**Aboard a station** the astronaut walks a deck with its own gravity, exactly
+like the ship's cabin: it reparents into the station, so `velocity` is relative
+to the room and standing still needs no correction for the room orbiting a
+planet at speed. `Station.contains_point` decides who is aboard, and its extents
+have to reach the walls' **inner faces** — set a metre tight, an astronaut
+standing against the fore wall was on the deck and reported as not aboard, which
+would have handed them back to the planet mid-room.
+
+Leaving the seat while docked puts the astronaut in the station's airlock rather
+than at the ship's ramp: the ramp is a cargo door on the belly and the join is at
+the nose. The transfer itself is not simulated. Modelling a tunnel and a hatch
+buys nothing the player can see.
 
 The agent flies through a seam on `Ship`, not around it:
 
@@ -743,9 +783,9 @@ hands back at `HULL_CLEARANCE`, and this is the one gap between training and
 gameplay that no test inside the training environment can see.
 
 **Controls.** `[P]` in the cockpit engages it. It flies to the `[Tab]`
-navigation target, or to the planet underneath when nothing is targeted, and
-refuses a destination it cannot land on — a body with no terrain, or none at
-all. Touching the controls takes the ship back.
+navigation target — a planet or a station — or to the planet underneath when
+nothing is targeted, and refuses a destination it cannot land on: a body with no
+terrain, or none at all. Touching the controls takes the ship back.
 
 **Regenerating.** Adding any script with a new `class_name` requires
 `Godot --headless --path . --import` before a headless run, or the class fails

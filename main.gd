@@ -20,7 +20,12 @@ var time: float = 0.0
 ## but the ship's _ground_cast and ramp probe raycast against terrain too, and
 ## both fail silently against ground that was never generated.
 ## Body the HUD is navigating toward. Null until the player picks one.
-var target: Planet = null
+##
+## A Planet or a Station: they share no base class, and the two things anything
+## here wants of a target — how big it is and how fast it is moving — are
+## dispatched by target_radius() and target_velocity() rather than by giving a
+## station the gravity and terrain it has no business having.
+var target: Node3D = null
 
 var _terrain_clients: Array[Node3D] = []
 ## Which planet each client was on last tick, so its patch can be released.
@@ -91,6 +96,13 @@ func _physics_process(delta: float) -> void:
 			planet.update_collision_for(client, client.global_position)
 
 
+## Bodies opted into terrain streaming. Also the shortest honest answer to
+## "which ship and which astronaut exist", which is what save_game wants.
+func get_terrain_clients() -> Array[Node3D]:
+	_forget_freed_clients()
+	return _terrain_clients
+
+
 ## Ask SolarSystem to keep terrain collision streamed in under this node.
 func register_terrain_client(node: Node3D) -> void:
 	if not _terrain_clients.has(node):
@@ -153,17 +165,49 @@ func _capture_radius(planet: Planet) -> float:
 # Release the mouse so the user can click UI, regardless of which body they are
 # currently controlling. Lives here rather than on the ship or the astronaut so
 # it keeps working across a swap.
+## Everything that can be navigated to, planets first.
+func targets() -> Array[Node3D]:
+	var all: Array[Node3D] = []
+	for planet in Planets:
+		all.append(planet)
+	for station in Stations:
+		all.append(station)
+	return all
+
+
 ## Step to the next body, wrapping through "no target" so it can be cleared.
 func cycle_target() -> void:
-	if Planets.is_empty():
+	var all := targets()
+	if all.is_empty():
 		return
-	var i := Planets.find(target)
+	var i := all.find(target)
 	if i < 0:
-		target = Planets[0]
-	elif i == Planets.size() - 1:
+		target = all[0]
+	elif i == all.size() - 1:
 		target = null
 	else:
-		target = Planets[i + 1]
+		target = all[i + 1]
+
+
+## How far from a target's centre counts as having arrived: a planet's surface,
+## or the point where a station's docking corridor begins.
+static func target_radius(node: Node3D) -> float:
+	if node is Planet:
+		return (node as Planet).surface_radius
+	if node is Station:
+		return (node as Station).approach_range
+	return 0.0
+
+
+## A target's own motion, which closing speed has to be measured against — the
+## destination is orbiting, so a raw dot product against world velocity reports
+## closing on something you are actually falling behind.
+static func target_velocity(node: Node3D) -> Vector3:
+	if node is Planet:
+		return (node as Planet).constant_linear_velocity
+	if node is Station:
+		return (node as Station).constant_linear_velocity
+	return Vector3.ZERO
 
 
 ## Distance from a world point to the target's surface, and how fast it is
@@ -173,9 +217,9 @@ func get_target_vector(world_pos: Vector3, world_velocity: Vector3) -> Array:
 	if target == null:
 		return []
 	var to_target := target.global_position - world_pos
-	var range_to_surface: float = to_target.length() - target.surface_radius
+	var range_to_surface: float = to_target.length() - target_radius(target)
 	# The target is moving too, so closing speed is relative.
-	var relative := world_velocity - target.constant_linear_velocity
+	var relative := world_velocity - target_velocity(target)
 	return [range_to_surface, relative.dot(to_target.normalized())]
 
 
@@ -251,9 +295,9 @@ func load_game() -> bool:
 		planet.update_orbit(time)
 
 	target = null
-	for planet in Planets:
-		if planet.name == data["target"]:
-			target = planet
+	for candidate in targets():
+		if candidate.name == data["target"]:
+			target = candidate
 
 	ship.global_transform = data["ship_transform"]
 	ship.linear_velocity = data["ship_linear_velocity"]

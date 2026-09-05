@@ -32,6 +32,7 @@ python/ppo.py  <--- JSON over TCP, one exchange per decision --->  rl/train.tscn
 | `python/smoke_test.py` | Checks the bridge before you spend an hour on a run |
 | `rl/cruise_check.tscn` | Checks that the assist can hold a velocity between bodies |
 | `rl/journey_check.tscn` | Flies whole journeys end to end, planet to planet |
+| `rl/dock_check.tscn` | Docks at a station in game, then walks the astronaut around it |
 
 ## Setup
 
@@ -169,6 +170,11 @@ arriving at the wrong part of the structure.
 
 The baseline's remaining failures are the spawns that start behind the station;
 it has no route-around, only a push back out in front of the port face.
+
+This same law is ported to GDScript as `ShipAutopilot`'s `DOCK` phase, so `[P]`
+docks the player's ship today without any policy at all. That is also the bar a
+trained one has to clear — see the open question in `../TODO.md` about whether
+RL beats the hand-written controller anywhere in this project.
 
 ```bash
 python evaluate.py --godot ... --project .. --task docking --controller baseline

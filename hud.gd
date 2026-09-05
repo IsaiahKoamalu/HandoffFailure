@@ -55,6 +55,8 @@ func _autopilot_text() -> String:
 	var auto: ShipAutopilot = _ship.autopilot
 	if auto == null:
 		return "[P] autopilot n/a"
+	if _ship.docked_to != null:
+		return "[P] DOCKED at %s   thrust to release" % _ship.docked_to.name
 	if auto.is_engaged:
 		return "[P] AUTO %s -> %s" % [
 			auto.phase_name(),
@@ -78,8 +80,18 @@ func _navigation_text(on_foot: bool) -> String:
 
 	var lines: Array[String] = []
 
+	# Aboard a station, say so: the dominant planet is still four hundred units
+	# below and "DEEP SPACE" is not what someone standing on a deck wants read
+	# back to them.
+	var aboard: Station = null
+	for station in system.Stations:
+		if station.contains_point(body.global_position):
+			aboard = station
+
 	var here := system.get_dominant_planet(body.global_position)
-	if here == null:
+	if aboard != null:
+		lines.append("aboard %s" % aboard.name)
+	elif here == null:
 		lines.append("DEEP SPACE")
 	else:
 		var local := here.to_local(body.global_position)

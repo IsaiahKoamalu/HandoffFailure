@@ -30,6 +30,13 @@ Ordered roughly by how much they would change what we believe, not by effort.
       attempt keeps landing on parity, that is a finding and the README should
       lead with it rather than treating it as unfinished business.
 
+- [ ] **Train a docking policy, and see whether it beats the baseline.** The
+      task, the station and the harness all exist; nothing has been trained. The
+      hand-written controller docks 76.7% of the time against 0.0% for no input,
+      and its failures are almost all spawns behind the station that it flies
+      around badly. That is a beatable number and a legible failure mode, which
+      makes this the fairest test yet of the question above.
+
 ## Environment
 
 - [ ] **Give fuel a reason to be spent well.** The 120s budget binds only on

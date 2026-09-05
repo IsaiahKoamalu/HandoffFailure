@@ -41,6 +41,31 @@ class_name Station
 ## uses cannot drift apart.
 @export var hull_extents: Vector3 = Vector3(8.0, 5.0, 12.0)
 
+@export_category("Interior")
+## Half-extents of the walkable volume, in the station's own frame. Smaller than
+## the hull because the hull has walls: this is the room inside them, and it is
+## what decides whether an astronaut is aboard.
+##
+## It has to reach the *inner faces*, not stop short of them. Set a metre tight
+## on the long axis, an astronaut who walked to the fore wall was standing on
+## the deck, against the wall, and reported as not aboard -- so the frame would
+## have handed them back to the planet while they were plainly inside the room.
+## The walls sit at +/-7.5 and +/-11.5 with a half-metre skin, and the deck runs
+## from -4.0 to +2.8; these are those numbers.
+@export var interior_extents: Vector3 = Vector3(7.0, 3.4, 11.0)
+## Centre of that volume, so a deck that is not halfway up the hull still works.
+@export var interior_center: Vector3 = Vector3(0.0, -0.6, 0.0)
+## Downward acceleration inside, along the station's own -Y.
+##
+## Spun-up, plated, handwaved — the game does not say which, the same way the
+## ship's cabin does not. What matters is that it is a *frame*: the astronaut
+## reparents into it and walks about while the whole room orbits a planet at
+## eight units a second, and never has to know that.
+@export var deck_gravity: float = 9.81
+## Where an astronaut arriving through the airlock is put down, as a node in the
+## station so it can be placed by eye in the editor.
+@export var airlock: Node3D
+
 # `constant_linear_velocity` is StaticBody3D's own field, written here the same
 # way Planet writes it: it is what a body's own motion is read from everywhere
 # in the project, so a station answers that question without special-casing.
@@ -91,6 +116,49 @@ func port_position() -> Vector3:
 ## of the normals is -1, not +1.
 func port_normal() -> Vector3:
 	return (global_basis * port_axis).normalized()
+
+
+# --- Interior ----------------------------------------------------------------
+
+## True when a world point is inside the walkable volume. Same shape and same
+## job as Ship.contains_point, because the astronaut asks both the same
+## question when it decides what it is standing in.
+func contains_point(world_pos: Vector3) -> bool:
+	var local: Vector3 = global_basis.inverse() * (world_pos - global_position) - interior_center
+	return absf(local.x) <= interior_extents.x \
+		and absf(local.y) <= interior_extents.y \
+		and absf(local.z) <= interior_extents.z
+
+
+## World-space velocity of the deck at a point, matching Planet's and Ship's
+## signature so the astronaut can convert frames without caring which kind of
+## body it is riding. The station does not spin, so every point moves alike.
+func get_surface_velocity(_world_pos: Vector3) -> Vector3:
+	return constant_linear_velocity
+
+
+## The ship currently latched here, if any. Walked rather than cached because
+## docking is rare and a stale reference to a freed ship is a crash.
+func docked_ship() -> Ship:
+	for client in SolarSystem.Instance.get_terrain_clients():
+		if client is Ship and (client as Ship).docked_to == self:
+			return client as Ship
+	return null
+
+
+## Airlock control: climb back into whatever is docked here.
+func _on_board_activated(_who: Node3D) -> void:
+	var ship := docked_ship()
+	if ship != null:
+		ship.board()
+
+
+## Where to put an astronaut coming aboard.
+func airlock_transform() -> Transform3D:
+	if airlock != null:
+		return airlock.global_transform
+	# No marker placed: the middle of the room, standing the right way up.
+	return Transform3D(global_basis, global_position + global_basis * interior_center)
 
 
 ## Velocity of the port itself. Equal to the station's, because the station does

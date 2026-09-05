@@ -253,6 +253,10 @@ func _physics_process(delta: float) -> void:
 	if is_piloted or external_control:
 		_process_look_inputs(delta)
 
+	# Before parking and before the engines: a latched ship is held by the
+	# station and nothing else applies to it.
+	_process_docking(movement)
+
 	_process_parking(movement)
 
 	# Engines spool rather than snapping between off and full.
@@ -506,6 +510,27 @@ func _process_flight_assist(dominant: Planet, movement: Vector3) -> void:
 @export var port_axis: Vector3 = Vector3(0.0, 0.0, -1.0)
 
 
+@export_category("Docking")
+## Port-to-port distance that latches.
+@export var dock_radius: float = 2.0
+## Speed of the ship's port relative to the station's at contact.
+@export var dock_speed: float = 1.0
+## Dot product of the two port normals. They meet face to face, so a perfect
+## alignment is -1 and the gate is a number close to it.
+@export var dock_align: float = -0.9
+## How far off the centreline contact may be.
+@export var dock_lateral: float = 1.0
+
+## The station this ship is latched to, or null. Kept in step with
+## DockingEnv's tolerances above -- the training task and the game have to
+## agree about what counts as docked or a policy is scored on a different
+## event than the one it causes.
+var docked_to: Station = null
+
+## Where the hull sits in the station's frame while latched.
+var _dock_local: Transform3D = Transform3D.IDENTITY
+
+
 func port_position() -> Vector3:
 	return global_position + global_basis * port_offset
 
@@ -522,6 +547,66 @@ func port_normal() -> Vector3:
 ## centre of mass reads stationary.
 func port_velocity() -> Vector3:
 	return linear_velocity + angular_velocity.cross(port_position() - global_position)
+
+
+## Try to latch onto a station. False if the approach was out of tolerance.
+##
+## Deliberately a *test*, not a snap: a ship that arrives crooked or fast should
+## bounce off the hull, and pulling it into alignment because it got close would
+## make the whole approach pointless.
+func try_dock(station: Station) -> bool:
+	if docked_to != null or station == null:
+		return false
+	var offset: Vector3 = station.port_position() - port_position()
+	var normal: Vector3 = station.port_normal()
+	var axial: float = -offset.dot(normal)
+	if offset.length() > dock_radius:
+		return false
+	if (offset + normal * axial).length() > dock_lateral:
+		return false
+	if port_normal().dot(normal) > dock_align:
+		return false
+	if (port_velocity() - station.port_velocity()).length() > dock_speed:
+		return false
+
+	docked_to = station
+	# Held in the station's frame, the same trick _process_parking uses to ride
+	# a planet's surface: the station orbits at eight units a second and a hull
+	# pinned in world space would be left behind immediately.
+	_dock_local = station.global_transform.affine_inverse() * global_transform
+	linear_velocity = Vector3.ZERO
+	angular_velocity = Vector3.ZERO
+	throttle = 0.0
+	clear_cruise()
+	return true
+
+
+func undock() -> void:
+	if docked_to == null:
+		return
+	# Inherit the station's motion on release, or the ship is instantly doing
+	# eight units a second relative to the thing it just let go of.
+	linear_velocity = docked_to.constant_linear_velocity
+	docked_to = null
+
+
+## Hold the hull on the port, and let go the moment the pilot asks to fly.
+##
+## An autopilot you have to switch off before you can leave is the same
+## complaint as an autopilot you have to switch off to save yourself; the
+## controls take the ship back here too.
+func _process_docking(movement: Vector3) -> void:
+	if docked_to == null:
+		return
+	if not is_instance_valid(docked_to):
+		docked_to = null
+		return
+	if movement != Vector3.ZERO:
+		undock()
+		return
+	global_transform = docked_to.global_transform * _dock_local
+	linear_velocity = Vector3.ZERO
+	angular_velocity = Vector3.ZERO
 
 
 ## Acceleration available at full thrust, in units per second squared.
@@ -666,7 +751,14 @@ func board() -> void:
 ## on the ground: the cabin has its own gravity, so it is safe to walk around.
 func disembark() -> void:
 	set_piloted(false)
-	_astronaut.place_at(_exit_point.global_transform)
+	# Docked, the ramp is a cargo door on the belly pointing at open space while
+	# the join is at the nose, so leaving the seat goes through the airlock
+	# instead. The transfer itself is not simulated -- the alternative is
+	# modelling a tunnel and a hatch, which buys nothing the player can see.
+	if docked_to != null:
+		_astronaut.place_at(docked_to.airlock_transform())
+	else:
+		_astronaut.place_at(_exit_point.global_transform)
 	_astronaut.set_active(true)
 
 

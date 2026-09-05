@@ -164,10 +164,14 @@ func get_interaction_prompt() -> String:
 # --- Frame of reference -----------------------------------------------------
 
 ## Whatever the astronaut is riding right now. The ship wins over the planet it
-## is parked on, so walking up the ramp hands off cleanly at the doorway.
+## is parked on, so walking up the ramp hands off cleanly at the doorway — and
+## over a station it is docked to, for the same reason at the airlock.
 func _pick_frame() -> Node3D:
 	if _ship != null and _ship.contains_point(global_position):
 		return _ship
+	for station in SolarSystem.Instance.Stations:
+		if station.contains_point(global_position):
+			return station
 	return SolarSystem.Instance.get_dominant_planet(global_position)
 
 
@@ -201,6 +205,8 @@ func _frame_velocity_at(frame: Node3D) -> Vector3:
 		return (frame as Planet).get_surface_velocity(global_position)
 	if frame is Ship:
 		return (frame as Ship).get_surface_velocity(global_position)
+	if frame is Station:
+		return (frame as Station).get_surface_velocity(global_position)
 	return Vector3.ZERO
 
 
@@ -212,6 +218,16 @@ func _update_frame_field() -> void:
 	if _frame_body is Ship:
 		_up = _frame_body.global_basis.y
 		_gravity = -_up * _cabin_gravity
+		is_submerged = false
+		return
+
+	if _frame_body is Station:
+		# Same shape as the cabin: a flat deck with its own up, held by whatever
+		# a station holds it with. The astronaut is reparented in, so its
+		# velocity is already relative to the room and standing still needs no
+		# correction for the room orbiting a planet at speed.
+		_up = _frame_body.global_basis.y
+		_gravity = -_up * (_frame_body as Station).deck_gravity
 		is_submerged = false
 		return
 
