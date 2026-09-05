@@ -20,6 +20,8 @@ python/ppo.py  <--- JSON over TCP, one exchange per decision --->  rl/train.tscn
 | --- | --- |
 | `rl/ship_task_env.gd` | Base for every control task: the agent pool, the clock, the action seam |
 | `rl/landing_env.gd` | The landing task: spawns, observations, reward, termination |
+| `rl/docking_env.gd` | The docking task, on the same base |
+| `station.gd` | An orbiting structure with a port. Not a Planet — see the file |
 | `rl/train_host.gd` | Headless host — loads `main.tscn`, strips the player, serves the socket |
 | `rl/train.tscn` | The scene the trainer runs |
 | `rl/neural_pilot.gd` | MLP forward pass in GDScript, loads `policy.json` |
@@ -112,7 +114,7 @@ sixteen altitude bars that stop going down.
 control, the episode clock, the shaping baseline, and `apply_action`, which is
 identical everywhere because every task flies the same six commands. A task
 supplies a *reference target* and a *terminal condition*: a planet surface for
-landing, and later another vessel for docking or an orbit for a transfer. Pick
+landing, a station's port for docking, and later an orbit for a transfer. Pick
 one with `--task` (default `landing`); the registry is `_make_env` in
 `train_host.gd`, one line per task.
 
@@ -124,7 +126,8 @@ The engine **describes the task on connect**, before any data flows:
  "outcomes": {"1": "landed", "2": "crashed", ...}}
 ```
 
-`ppo.py` builds its network to that width and takes its log labels from those
+There are two tasks now — `landing` and `docking` — and `ppo.py` builds its
+network to whichever width the engine reports, taking its log labels from those
 names. Both used to be constants in `godot_env.py` — fine with one task, and
 silently wrong with two: the network would be allocated at the wrong shape and
 the logs would label outcomes belonging to a task nobody was running. The
@@ -136,6 +139,68 @@ an unhelpful message.
 policy trained for another one. A mismatched policy does not fail on its own —
 it produces six numbers in range either way and flies something it has never
 seen. Policies predating the field are read as landers, which they all were.
+
+### The docking task
+
+Second on `ShipTaskEnv`, and the first where contact is the point rather than
+something to avoid. Landing ends when a distance to an analytic surface reaches
+zero; docking ends when two *oriented* faces meet, at a speed and an alignment
+that would survive a latch.
+
+**Observation** (22 floats, `DockingEnv.build_observation`) — port-to-port
+offset, relative velocity, the port's outward normal, alignment, and the
+corridor decomposition (`axial`, how far in front of the port face; `lateral`,
+how far off the centreline), all in the ship's own frame. Plus spin, throttle,
+progress, fuel, and local gravity — the station orbits a planet and flight
+assist is trimming against *that planet*, not against the station, so the policy
+is flying inside a field it did not choose and should be able to see it.
+
+**Outcomes** — `docked`, `collided` (hit the hull), `botched` (reached the port
+face out of tolerance), `drifted`, `timeout`. Botching and colliding are tracked
+apart because they are different mistakes: one is nearly right and the other is
+arriving at the wrong part of the structure.
+
+**Scored against the hand-written baseline**, which is the point of having one:
+
+| Controller | Docked | Mean return |
+| --- | --- | --- |
+| no input (assist only) | 0.0% | −226.9 |
+| hand-written baseline | **76.7%** | +59.7 |
+
+The baseline's remaining failures are the spawns that start behind the station;
+it has no route-around, only a push back out in front of the port face.
+
+```bash
+python evaluate.py --godot ... --project .. --task docking --controller baseline
+python ppo.py --godot ... --project .. --task docking --out ../rl/runs/docking
+```
+
+#### Four things the baseline had to learn the hard way
+
+All four were found by measuring, and all four are properties of the *plant*
+rather than of the controller — a learned policy meets every one of them.
+
+**Flight assist trims against the wrong body.** Near a station the dominant body
+is the planet it orbits, so the assist holds station over the *ground*, not over
+the station. That is a standing disturbance of about a unit a second, and a
+proportional law settles where its command cancels it. It is why the lateral
+error will not go to zero and why the closing gain has to be high.
+
+**Centring and closing must not compete.** The first version blended the aim
+point between the port and a standoff. The two commands fought, and the lateral
+error settled at exactly whatever threshold the blend used — 0.41 units for one
+value, 0.76 for another — with the ship parked there holding a perfect corridor
+until the clock ran out. Correcting lateral at full authority *always* and
+throttling only the approach has no such fixed point.
+
+**A standoff must not track the ship.** Aiming at `max(axial, safe)` meant the
+target followed the ship outward, so nothing pulled it back: it drifted from 20
+units to 38 over two minutes while the controller commanded nothing about it.
+
+**Proportional laws stop short.** Everything above tapers to nothing on arrival,
+so the approach parked at a range of 2.4 units — alignment −1.00, closing 0.41 —
+four tenths short of a 2.0-unit gate. A constant creep over the last few metres
+closes it and cannot wind up the way an integral term would.
 
 ### Decision rate
 

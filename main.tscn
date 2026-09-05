@@ -6,6 +6,7 @@
 [ext_resource type="PackedScene" uid="uid://bf7vn77fyd3ra" path="res://ship.tscn" id="5_ship"]
 [ext_resource type="PackedScene" path="res://astronaut.tscn" id="6_astro"]
 [ext_resource type="Script" uid="uid://itno6mhiwwrj" path="res://hud.gd" id="7_hud"]
+[ext_resource type="Script" path="res://station.gd" id="8_station"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_0xm2m"]
 shading_mode = 0
@@ -28,6 +29,30 @@ height = 40.0
 
 [sub_resource type="SphereShape3D" id="SphereShape3D_lquwl"]
 radius = 20.0
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_station"]
+albedo_color = Color(0.62, 0.64, 0.68, 1)
+metallic = 0.7
+roughness = 0.45
+
+[sub_resource type="BoxMesh" id="BoxMesh_station"]
+material = SubResource("StandardMaterial3D_station")
+size = Vector3(16, 10, 24)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_station"]
+size = Vector3(16, 10, 24)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_port"]
+albedo_color = Color(0.95, 0.55, 0.15, 1)
+emission_enabled = true
+emission = Color(0.95, 0.45, 0.1, 1)
+emission_energy_multiplier = 2.0
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_port"]
+material = SubResource("StandardMaterial3D_port")
+top_radius = 2.4
+bottom_radius = 3.2
+height = 2.0
 
 [sub_resource type="PanoramaSkyMaterial" id="PanoramaSkyMaterial_lquwl"]
 panorama = ExtResource("4_1bvp3")
@@ -167,6 +192,24 @@ mesh = SubResource("SphereMesh_1bvp3")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Planet3" unique_id=498119634]
 shape = SubResource("SphereShape3D_lquwl")
+
+[node name="Station1" type="StaticBody3D" parent="." node_paths=PackedStringArray("orbital_parent")]
+script = ExtResource("8_station")
+orbital_parent = NodePath("../Planet1")
+orbital_radius = 420.0
+orbital_angle = 40.0
+orbital_period = 300.0
+hull_extents = Vector3(8, 5, 12)
+
+[node name="Hull" type="MeshInstance3D" parent="Station1"]
+mesh = SubResource("BoxMesh_station")
+
+[node name="HullShape" type="CollisionShape3D" parent="Station1"]
+shape = SubResource("BoxShape3D_station")
+
+[node name="PortMarker" type="MeshInstance3D" parent="Station1"]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0, -13)
+mesh = SubResource("CylinderMesh_port")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1313021977]
 environment = SubResource("Environment_ig7tw")

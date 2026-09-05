@@ -495,6 +495,35 @@ func _process_flight_assist(dominant: Planet, movement: Vector3) -> void:
 	apply_central_force(-drift * _assist_strength * mass)
 
 
+# --- Docking port ------------------------------------------------------------
+# Mirrors Station's port interface exactly, so a docking controller can ask both
+# ends of the join the same three questions and never has to know which is
+# which.
+
+## Where the ship's port sits, in its own frame. On the nose, which is -Z.
+@export var port_offset: Vector3 = Vector3(0.0, 0.0, -3.0)
+## Outward normal of the port face, in the ship's own frame.
+@export var port_axis: Vector3 = Vector3(0.0, 0.0, -1.0)
+
+
+func port_position() -> Vector3:
+	return global_position + global_basis * port_offset
+
+
+## Outward normal of the port face. Two ports are lined up when their normals
+## are opposite — the faces meet — so the dot product wanted is -1, not +1.
+func port_normal() -> Vector3:
+	return (global_basis * port_axis).normalized()
+
+
+## Velocity of the port, which is the hull's plus whatever the ship's rotation
+## adds at that offset. The rotation term is not decoration: a ship yawing at
+## half a radian a second swings a nose-mounted port at 1.5 units/s while its
+## centre of mass reads stationary.
+func port_velocity() -> Vector3:
+	return linear_velocity + angular_velocity.cross(port_position() - global_position)
+
+
 ## Acceleration available at full thrust, in units per second squared.
 ##
 ## Force is `_thrust * mass * direction`, so the mass cancels and this is just

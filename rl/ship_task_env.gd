@@ -83,6 +83,14 @@ func obs_size() -> int:
 	return 0
 
 
+## The clock this task wants when the trainer does not name one. A landing
+## crossing half a planet and a docking approach from a hundred metres are not
+## the same length of episode, and a default sized for one is part of the
+## metric for the other -- see the note on max_steps above.
+func default_max_steps() -> int:
+	return max_steps
+
+
 ## Width of the action vector. The same for every control task.
 func act_size() -> int:
 	return ACT_SIZE

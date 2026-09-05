@@ -76,6 +76,151 @@ BRAKE_GAIN = 8.0
 CRUISE_SPEED = 0.30
 
 
+# --- Docking -----------------------------------------------------------------
+# Observation layout, mirroring DockingEnv.build_observation. A docking
+# observation is a different vector of a different width; nothing here is
+# shared with the landing slots above, and the names are kept apart so that a
+# mistake reads as one.
+D_RANGE = 0
+D_OFFSET = slice(2, 5)
+D_VELOCITY = slice(5, 8)
+D_CLOSING = 8
+D_NORMAL = slice(9, 12)
+D_ALIGN = 12
+D_AXIAL = 13
+D_LATERAL = 14
+D_SPIN = slice(15, 18)
+
+# Speed to close at, per unit of distance to the point being flown to, in
+# observation units (SPEED_SCALE = 20 units/s per unit, approach_range = 60
+# units per unit of distance). Tapers to nothing on arrival, which is what makes
+# contact gentle without a separate braking phase.
+#
+# It has to be high. Flight assist trims drift against the *planet* the station
+# orbits, not against the station, so the ship sits in a persistent relative
+# drift of about a unit a second. A proportional law against a constant
+# disturbance settles at an error of disturbance/gain: at 0.9 that was a
+# three-unit standing offset the ship could not close, and every approach ran
+# out the clock holding it.
+DOCK_CLOSE_GAIN = 9.0
+# Ceiling on that, so a long approach does not begin at a sprint.
+DOCK_CLOSE_MAX = 0.25
+# A second ceiling, tapering with range to the *port*, so contact is gentle.
+#
+# Two limits rather than one because they are pulling opposite ways. The gain
+# above has to be high to beat the orbital drift, and at that gain the ship was
+# still commanding its full five units a second two metres from the port and
+# arriving at 4.66 against a 1.0 gate. This one does not care how far the
+# current aim point is, only how close the port is: 0.75 gives half a unit a
+# second at two units out, and meets DOCK_CLOSE_MAX at twenty.
+DOCK_ARRIVE_GAIN = 0.75
+# Closing rate held once lined up and committed, in observation units: 0.6 units
+# a second, against a 1.0-unit gate at contact.
+#
+# Everything above it is proportional, and a proportional law against a standing
+# disturbance stops where its command equals the disturbance. Measured, it
+# stopped at a range of 2.4 units -- alignment -1.00, lateral 0.41, closing 0.41
+# -- and held that four tenths short of a 2.0-unit gate for the rest of the
+# episode. A constant creep on the last few metres is how real docking systems
+# close it, and it needs no integral term to wind up.
+DOCK_CREEP = 0.03
+# Alignment required before committing to that creep. Approaching blind at a
+# fixed rate while still crooked is how a botch becomes a collision.
+DOCK_COMMIT_ALIGN = -0.95
+# Gain on velocity error. The ship is a rigid body with flight assist trimming
+# against a planet that is not the station, so this has real work to do.
+DOCK_VELOCITY_GAIN = 6.0
+# Gain turning the pointing error into a turn rate, and the one damping spin.
+DOCK_TURN_GAIN = 2.5
+DOCK_SPIN_GAIN = 1.2
+# Lateral offset, in approach ranges, at which closing is throttled to nothing.
+# 0.025 of a 60-unit range is 1.5 units, against a 1.0-unit gate at contact.
+#
+# The lateral error cannot be driven to zero. Flight assist trims drift against
+# the planet the station orbits rather than against the station, so there is a
+# standing disturbance, and a proportional law settles where its command
+# cancels it -- around 0.4 units, measured.
+#
+# So this throttles *closing* rather than choosing between closing and
+# centring. An earlier version blended the aim point between the port and a
+# standoff, and the two commands competed: the lateral error then settled at
+# whatever threshold the blend used -- 0.41 units for one value of it, 0.76 for
+# another -- and the ship parked there holding a perfect corridor. Correcting
+# lateral at full authority always, and throttling only the approach, has no
+# such fixed point to sit in.
+DOCK_TIGHT = 0.025
+
+
+def dock_baseline_controller(obs: np.ndarray) -> np.ndarray:
+    """Fly to the corridor, line up on it, then close.
+
+    A proportional law, and deliberately so -- transit in ShipAutopilot is the
+    same shape for the same reason. What makes it more than "thrust at the
+    port" is the order of business: a ship that closes on the port before it is
+    on the centreline arrives at the hull, so while the lateral offset is large
+    this cancels it *first* and only then allows range to come down.
+
+    Everything is in the ship's own frame, which is the frame the commands are
+    in, so a direction here maps onto a thrust without any rotation maths.
+    """
+    n = obs.shape[0]
+    action = np.zeros((n, ACT_SIZE), dtype=np.float32)
+
+    offset = obs[:, D_OFFSET]           # ship port -> station port
+    velocity = obs[:, D_VELOCITY]       # relative to the station
+    normal = obs[:, D_NORMAL]           # outward normal of the port face
+    lateral = obs[:, D_LATERAL]
+    axial = obs[:, D_AXIAL]
+    ranges = obs[:, D_RANGE]
+
+    # The two jobs are commanded separately, and only one of them is throttled.
+    #
+    # Across the corridor: always corrected, at full gain. `across` is the part
+    # of the offset perpendicular to the port normal.
+    axial_component = np.sum(offset * normal, axis=1, keepdims=True) * normal
+    across = offset - axial_component
+    across_distance = np.linalg.norm(across, axis=1, keepdims=True)
+    across_speed = np.minimum(across_distance * DOCK_CLOSE_GAIN, DOCK_CLOSE_MAX)
+    wanted = np.where(
+        across_distance > 1e-6,
+        across / np.maximum(across_distance, 1e-6) * across_speed,
+        0.0,
+    )
+
+    # Along it: gated on being centred, facing the right way, and in front of
+    # the port face. A ship failing any of those closes at nothing and spends
+    # the time fixing it instead -- which is also what keeps a spawn behind the
+    # station out of the hull.
+    gate = np.clip(1.0 - lateral / DOCK_TIGHT, 0.0, 1.0)
+    gate = gate * (obs[:, D_ALIGN] < DOCK_COMMIT_ALIGN)
+    gate = gate * (axial > 0.0)
+    approach = np.minimum(ranges * DOCK_ARRIVE_GAIN, DOCK_CLOSE_MAX)
+    # A floor, because everything above is proportional and a proportional law
+    # against a standing disturbance stops where its command equals it.
+    # Measured without it: parked at a range of 2.4 units with alignment -1.00,
+    # holding four tenths short of a 2.0-unit gate for the rest of the episode.
+    # A constant creep over the last few metres is how real docking systems
+    # close that, and it cannot wind up the way an integral term would.
+    approach = np.maximum(approach, DOCK_CREEP) * gate
+    wanted = wanted - normal * approach[:, None]
+
+    # Behind the port face there is nothing to line up on yet: get out in front
+    # of it first.
+    wanted = wanted + normal * ((axial <= 0.0) * DOCK_CLOSE_MAX)[:, None]
+
+    action[:, 0:3] = np.clip((wanted - velocity) * DOCK_VELOCITY_GAIN, -1.0, 1.0)
+
+    # Point the nose at the port face. The ship's port is on its nose, local
+    # -Z, and it has to end up facing back down the corridor -- so the nose
+    # should point along the *inward* normal, which is -normal.
+    d = -normal
+    spin = obs[:, D_SPIN]
+    action[:, 3] = np.clip(d[:, 1] * DOCK_TURN_GAIN - spin[:, 0] * DOCK_SPIN_GAIN, -1.0, 1.0)
+    action[:, 4] = np.clip(-d[:, 0] * DOCK_TURN_GAIN - spin[:, 1] * DOCK_SPIN_GAIN, -1.0, 1.0)
+    action[:, 5] = np.clip(-spin[:, 2] * DOCK_SPIN_GAIN, -1.0, 1.0)
+    return action
+
+
 def baseline_controller(obs: np.ndarray) -> np.ndarray:
     """Fly to the planet's largest continent from anywhere, and land on it.
 
@@ -207,6 +352,7 @@ def main() -> None:
     parser.add_argument("--controller", choices=["policy", "baseline", "zero"], default="policy")
     parser.add_argument("--policy-path", default=str(DEFAULT_POLICY))
     parser.add_argument("--episodes", type=int, default=200)
+    parser.add_argument("--task", default="landing")
     parser.add_argument("--agents", type=int, default=32)
     parser.add_argument("--port", type=int, default=11040)
     parser.add_argument("--seed", type=int, default=1234)
@@ -226,7 +372,7 @@ def main() -> None:
         controller = PolicyController(Path(args.policy_path))
         label = f"policy ({controller.trained_steps:,} steps)"
     elif args.controller == "baseline":
-        controller = baseline_controller
+        controller = dock_baseline_controller if args.task == "docking" else baseline_controller
         label = "hand-written baseline"
     else:
         controller = lambda obs: np.zeros((obs.shape[0], ACT_SIZE), dtype=np.float32)
@@ -241,7 +387,7 @@ def main() -> None:
     with GodotVecEnv(
         args.godot, args.project, num_agents=args.agents, port=args.port,
         seed=args.seed, repeat=args.repeat, max_steps=args.max_steps,
-        fuel_seconds=args.fuel,
+        fuel_seconds=args.fuel, task=args.task,
     ) as env:
         if isinstance(controller, PolicyController):
             if controller.task != env.task:
@@ -291,7 +437,11 @@ def main() -> None:
     total = max(len(returns), 1)
     print(f"\n=== {label} ===")
     print(f"episodes            {len(returns)}")
-    print(f"landing rate        {outcomes[LANDED] / total:.1%}")
+    # The success outcome is id 1 in every task -- landed, docked -- and the
+    # engine named it in the handshake, so this reads correctly under both
+    # rather than hardcoding one task's vocabulary.
+    success = names.get(1, "success")
+    print(f"{success + ' rate':<20}{outcomes[1] / total:.1%}")
     if args.fuel > 0.0 and landed_fuel:
         q = np.percentile(landed_fuel, [50, 90, 99])
         print(f"fuel of a landing   median {q[0]:.1f}s  p90 {q[1]:.1f}s  "

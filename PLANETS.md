@@ -10,6 +10,7 @@ Covers `planet.gd`, `planet_mesh.gd`, and the parts of `main.gd` that drive them
 | File | Role |
 |---|---|
 | `main.gd` (`SolarSystem`) | Owns the simulation clock, drives every planet in parent-first order, answers gravity and sphere-of-influence queries, streams terrain collision to registered bodies. |
+| `station.gd` (`Station`) | An orbiting structure with a docking port. Analytic orbit like a planet, but no gravity, no terrain and **no sphere of influence**. |
 | `planet.gd` (`Planet`) | One body. Analytic orbit, gravity, procedural terrain height, ocean, collision patch. |
 | `planet_mesh.gd` (`PlanetMesh`) | Pure geometry. Builds cube-sphere meshes and collision patches from a planet's height function. Stateless — all static methods. |
 
@@ -647,6 +648,13 @@ answers only the second:
 | --- | --- | --- |
 | `TRANSIT` | analytic guidance | anywhere, deep space included |
 | `DESCENT` | the trained policy | inside the destination's sphere of influence |
+
+A `Station` is deliberately not a `Planet`. Giving it gravity would make it a
+fourth body pulling on the ship, and giving it a capture radius would overlap
+the planet it orbits — which is the one thing `get_dominant_planet` cannot
+survive, and is listed under the invariants above. A station is scenery with a
+port on it, and `SolarSystem` drives stations after planets for the same reason
+a moon is driven after its planet.
 
 Transit is one law rather than three: the commanded speed is whatever can still
 be shed before arrival, `sqrt(v_arrival² + 2·a·s)`, capped by a maximum. So

@@ -140,8 +140,9 @@ func _ready() -> void:
 	_env.flight_assist = assist
 	_env.visible_agents = render
 	_env.fuel_seconds = fuel_seconds
-	if max_steps > 0:
-		_env.max_steps = max_steps
+	# An explicit --max-steps wins; otherwise the task says how long its own
+	# episodes should be.
+	_env.max_steps = max_steps if max_steps > 0 else _env.default_max_steps()
 	add_child(_env)
 	if not _env.setup(load(SHIP_SCENE), seed_value):
 		# The task has already said why. It could not bind to the world it
@@ -189,6 +190,7 @@ func _ready() -> void:
 func _make_env(name: String) -> ShipTaskEnv:
 	match name:
 		"landing": return LandingEnv.new()
+		"docking": return DockingEnv.new()
 	return null
 
 

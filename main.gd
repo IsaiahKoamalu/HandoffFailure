@@ -11,6 +11,9 @@ const CAPTURE_RADIUS_FACTOR: float = 2.0
 
 static var Instance: SolarSystem
 var Planets: Array[Planet] = []
+## Orbiting structures. Not planets: no gravity, no terrain, no sphere of
+## influence — see station.gd for why that separation is load-bearing.
+var Stations: Array[Station] = []
 var time: float = 0.0
 
 ## Bodies that need real ground beneath them. The astronaut is the obvious one,
@@ -28,9 +31,12 @@ func _ready() -> void:
 
 	# Collect children that are Planet instances
 	Planets.clear()
+	Stations.clear()
 	for child in get_children():
 		if child is Planet:
 			Planets.append(child)
+		elif child is Station:
+			Stations.append(child)
 
 	# Order planets by how deep they are in the hierarchy (fewest parents first)
 	Planets.sort_custom(func(a: Planet, b: Planet) -> bool:
@@ -50,6 +56,10 @@ func _ready() -> void:
 	for planet in Planets:
 		planet.apply_terrain()
 
+	# After the planets, because a station reads its parent's position.
+	for station in Stations:
+		station.init()
+
 
 func _generate_planet_mesh(index: int) -> void:
 	Planets[index].generate_terrain_mesh()
@@ -62,6 +72,11 @@ func _physics_process(delta: float) -> void:
 	time += delta * time_scale
 	for planet in Planets:
 		planet.update_orbit(time)
+	# Stations orbit planets, so they advance after them for the same reason a
+	# moon does: reading a parent position from last tick lags the child by a
+	# frame, which at these speeds is metres.
+	for station in Stations:
+		station.update_orbit(time)
 
 	_forget_freed_clients()
 	for client in _terrain_clients:
