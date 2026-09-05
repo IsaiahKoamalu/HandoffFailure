@@ -531,6 +531,13 @@ func _process_flight_assist(dominant: Planet, movement: Vector3) -> void:
 
 ## The nose hatch. Hidden and un-collided while docked, which is the whole of
 ## what "the airlock is open" means here.
+##
+## It is glazed, and so are the cheeks either side of it. The whole nose used to
+## be one pane of glass and the pilot looks straight through it, so cutting a
+## door out of that pane in opaque hull put a panel across the middle of the
+## forward view. Glass with collision is what the windshield always was; the
+## hatch is a door with a window in it, which is what a door in the front of a
+## cockpit would be.
 @export var nose_hatch: Node3D
 
 ## The station this ship is latched to, or null. Kept in step with

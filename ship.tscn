@@ -36,16 +36,17 @@ size = Vector3(3.2, 0.4, 0.2)
 size = Vector3(3.2, 0.4, 0.2)
 
 [sub_resource type="BoxMesh" id="Mesh_nosecheek"]
-material = SubResource("Mat_hull")
+material = SubResource("Mat_glass")
 size = Vector3(0.7, 2, 0.2)
 
 [sub_resource type="BoxShape3D" id="Shape_nosecheek"]
 size = Vector3(0.7, 2, 0.2)
 
 [sub_resource type="StandardMaterial3D" id="Mat_hatch"]
-albedo_color = Color(0.34, 0.36, 0.4, 1)
-metallic = 0.5
-roughness = 0.55
+transparency = 1
+albedo_color = Color(0.4, 0.55, 0.6, 0.34)
+metallic = 0.6
+roughness = 0.15
 
 [sub_resource type="BoxMesh" id="Mesh_hatch"]
 material = SubResource("Mat_hatch")
