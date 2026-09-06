@@ -53,6 +53,13 @@ func _ready() -> void:
 			_world.remove_child(hud)
 			hud.queue_free()
 
+	# Every other camera in the world stands down first. The ship and the
+	# astronaut each carry one, and whichever of them is current renders the
+	# frame no matter what this one is doing -- which is how a shot reporting a
+	# camera seven metres above the ground came out looking like low orbit.
+	for other in _all_cameras(_world):
+		other.current = false
+
 	_camera = Camera3D.new()
 	_camera.near = 0.05
 	_camera.far = 40000.0
@@ -60,6 +67,15 @@ func _ready() -> void:
 	_camera.current = true
 
 	await _run()
+
+
+func _all_cameras(node: Node) -> Array[Camera3D]:
+	var found: Array[Camera3D] = []
+	if node is Camera3D:
+		found.append(node)
+	for child in node.get_children():
+		found.append_array(_all_cameras(child))
+	return found
 
 
 func _planet() -> Planet:
@@ -97,7 +113,12 @@ func _land_direction(planet: Planet) -> Vector3:
 		var lit: float = dir.dot(toward_sun)
 		if lit < 0.35:
 			continue
-		var score: float = planet.get_land_signal(dir) + lit * 0.25
+		# Aimed at ground that is comfortably inland rather than at the highest
+		# land on the planet. Maximising the land signal finds the middle of the
+		# largest continent, which is also its summit, so every surface shot
+		# came back as a snowfield and said nothing about the rest of the world.
+		var inland: float = planet.get_land_signal(dir)
+		var score: float = -absf(inland - 0.22) + lit * 0.25
 		if score > best_score:
 			best_score = score
 			best = dir
@@ -105,6 +126,14 @@ func _land_direction(planet: Planet) -> Vector3:
 
 
 func _run() -> void:
+	# Before anything is framed. Planets are placed by update_orbit, which runs
+	# on the physics tick, so until one has passed every body is still at its
+	# authored editor position -- Kestrel by nearly a thousand units. Framing
+	# against that put the ship on a surface the planet then left, and the shot
+	# came out as a dark hull against a distant world.
+	for _i in 3:
+		await get_tree().physics_frame
+
 	var planet: Planet = _planet()
 	for hidden in _hide:
 		var node: Node3D = planet.get_node_or_null(NodePath(hidden))
@@ -150,6 +179,7 @@ func _run() -> void:
 		_:
 			push_error("unknown shot '%s'" % _shot)
 
+	_report(planet)
 	await _shutter()
 
 
@@ -166,15 +196,25 @@ func _stage_hardware(planet: Planet) -> void:
 		"ship":
 			var dir: Vector3 = _land_direction(planet)
 			var ground: float = planet.get_surface_radius_at(dir)
-			var up: Vector3 = planet.to_global(dir) - planet.global_position
-			up = up.normalized()
+			var up: Vector3 = (planet.global_basis * dir).normalized()
 			var along: Vector3 = up.cross(Vector3.UP).normalized()
-			ship.global_transform = Transform3D(
-				Basis.looking_at(along, up), planet.to_global(dir * (ground + 1.6)))
-			ship.linear_velocity = planet.get_orbital_velocity(ship.global_position)
+			# Framed off the transform being assigned, not off the body read
+			# back afterwards. A RigidBody3D does not move until the physics
+			# step, so reading its position here aims the camera at wherever it
+			# used to be -- which put the ship out of frame and the shot a
+			# hundred units up, looking at a horizon.
+			var place := Transform3D(
+				Basis.looking_at(along, up),
+				planet.to_global(dir * (ground + 1.6)))
+			ship.global_transform = place
+			ship.linear_velocity = planet.get_orbital_velocity(place.origin)
 			ship.freeze = true
-			_look(ship.global_position + up * 2.2 - along * 9.0
-				+ along.cross(up) * 7.0, ship.global_position)
+			# up is the planet's local up, not the world's. A surface shot framed
+			# against world up comes out rolled by however far the site is from
+			# the pole, and a horizon running down the side of the frame reads
+			# as a shot from orbit rather than as one from the ground.
+			_look(place.origin + up * 2.4 - along * 8.0
+				+ along.cross(up) * 6.0, place.origin + up * 0.8, up)
 		"station":
 			_look(station.global_position + station.global_basis
 				* Vector3(26.0, 12.0, -34.0), station.global_position)
@@ -183,9 +223,32 @@ func _stage_hardware(planet: Planet) -> void:
 			var here: Vector3 = planet.global_position + out * planet.surface_radius * 2.2
 			ship.global_transform = Transform3D(
 				Basis.looking_at(planet.global_position - here, Vector3.UP), here)
-			ship.linear_velocity = planet.get_orbital_velocity(ship.global_position)
+			ship.linear_velocity = planet.get_orbital_velocity(here)
 			ship.board()
 			_camera.current = false
+
+
+## What the frame actually contains, printed rather than inferred from looking
+## at it. Framing bugs in a 3D scene look exactly like content bugs.
+func _report(planet: Planet) -> void:
+	var camera: Vector3 = _camera.global_position
+	print("planet %s at %.0f,%.0f,%.0f  r=%.0f" % [planet.name,
+		planet.global_position.x, planet.global_position.y,
+		planet.global_position.z, planet.surface_radius])
+	print("camera %.0f,%.0f,%.0f  %.1f from planet centre (%.2f radii), %.1f above ground"
+		% [camera.x, camera.y, camera.z,
+			camera.distance_to(planet.global_position),
+			camera.distance_to(planet.global_position) / planet.surface_radius,
+			camera.distance_to(planet.global_position) - planet.surface_radius])
+	var current: Camera3D = get_viewport().get_camera_3d()
+	print("rendering from %s" % ("the shot camera" if current == _camera
+		else ("'%s'" % current.name if current != null else "NO CAMERA")))
+	var ship: Ship = _world.get_node_or_null("Ship")
+	if ship != null:
+		print("ship   %.1f from camera, %.1f above ground" % [
+			ship.global_position.distance_to(camera),
+			ship.global_position.distance_to(planet.global_position)
+				- planet.surface_radius])
 
 
 func _shutter() -> void:

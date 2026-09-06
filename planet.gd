@@ -114,7 +114,7 @@ class_name Planet
 ## ocean surface z-fight with them.
 @export_range(0.0, 1.0, 0.01) var ocean_depth: float = 0.35
 ## The ocean is a smooth sphere, so this can stay low until you add waves.
-@export_range(4, 128, 1) var water_resolution: int = 32
+@export_range(4, 256, 1) var water_resolution: int = 96
 @export var water_color: Color = Color(0.05, 0.25, 0.45, 0.75)
 ## Colour looking straight down into deep water. Alpha is used: deep water is
 ## opaque, and a single translucent colour everywhere reads as coloured glass.
@@ -129,6 +129,27 @@ class_name Planet
 @export_range(0.05, 1.0, 0.01) var patch_max_angle: float = 0.35
 @export_range(4, 128, 1) var patch_resolution: int = 48
 
+@export_category("Surface scatter")
+## Boulders strewn across the ground near whoever is standing on it.
+##
+## The terrain mesh cannot carry features at this size -- one vertex spans
+## several metres -- so from a hundred metres up a planet is a smooth dome with
+## nothing in it to judge height, speed or scale against. These are that
+## missing scale reference, and the difference between ground and a backdrop.
+##
+## Streamed on the same patch the collision uses, and rebuilt when it recentres,
+## so the cost is a fixed few hundred instances per client rather than something
+## that grows with the size of the world.
+@export var scatter_enabled: bool = false
+@export_range(0, 2000, 10) var scatter_count: int = 420
+## Boulder size in world units, smallest to largest.
+@export var scatter_size: Vector2 = Vector2(0.5, 2.6)
+## Tint. Left black, the rock colour is used, which is usually what is wanted.
+@export var scatter_color: Color = Color(0, 0, 0, 0)
+## Steepest ground that still collects loose rock, as a slope dot product.
+## Boulders on a cliff face look stuck on, because they are.
+@export_range(0.0, 1.0, 0.01) var scatter_max_slope: float = 0.55
+
 var standard_gravitational_parameter: float = 0.0
 
 var _continents: FastNoiseLite
@@ -139,6 +160,8 @@ var _built_mesh: ArrayMesh = null
 var _far_mesh: ArrayMesh = null
 ## The cloud shell, or null on a body with no weather.
 var _clouds: Node3D = null
+## The one boulder mesh every scattered rock on this planet instances.
+var _boulder: ArrayMesh = null
 ## One streamed patch per terrain client, keyed by the client node.
 ##
 ## Deliberately not a single shared patch: two clients standing apart on the
@@ -151,6 +174,12 @@ var _patches: Dictionary = {}
 ## One client's streamed collision patch and the state of its in-flight build.
 class Patch extends RefCounted:
 	var collider: CollisionShape3D
+	## Boulders for this client, or null on a planet with none.
+	var scatter: MultiMeshInstance3D = null
+	## Centre the scatter was last populated for, which lags `centre` by one
+	## rebuild -- the collision shape is adopted off a worker thread and the
+	## scatter is filled in on the main thread when that lands.
+	var scatter_centre: Vector3 = Vector3.ZERO
 	## Centre of the live shape, as a planet-local direction.
 	var centre: Vector3 = Vector3.ZERO
 	var pending_centre: Vector3 = Vector3.ZERO
@@ -713,6 +742,7 @@ func build_collision_now(client: Node3D, world_pos: Vector3) -> void:
 	patch.centre = dir
 	patch.collider.shape = PlanetMesh.build_patch(
 		self, dir, _patch_angle(), patch_resolution)
+	_populate_scatter(patch)
 
 
 ## Drop a client's patch once it is no longer on this planet, so colliders do
@@ -724,6 +754,8 @@ func release_client(client: Node3D) -> void:
 	if patch.task != -1:
 		WorkerThreadPool.wait_for_task_completion(patch.task)
 	patch.collider.queue_free()
+	if patch.scatter != null:
+		patch.scatter.queue_free()
 	_patches.erase(client)
 
 
@@ -755,6 +787,142 @@ func _adopt_finished(patch: Patch) -> void:
 		patch.collider.shape = patch.result
 		patch.centre = patch.pending_centre
 		patch.result = null
+		_populate_scatter(patch)
+
+
+## Fill a patch's boulder field for wherever it has just been recentred.
+##
+## Placement is a hash of the boulder's own grid cell rather than a running
+## random sequence, so a patch rebuilt after the client walks away and comes
+## back puts the same rocks in the same places. A sequence would reshuffle the
+## landscape every time it streamed, which is worse than having no rocks: the
+## ground would visibly change behind you.
+func _populate_scatter(patch: Patch) -> void:
+	if not scatter_enabled or not _drawing() or scatter_count <= 0:
+		return
+	if patch.centre.is_zero_approx():
+		return
+	if patch.scatter != null and patch.scatter_centre.dot(patch.centre) > 0.9999:
+		return
+
+	if patch.scatter == null:
+		patch.scatter = MultiMeshInstance3D.new()
+		patch.scatter.name = "Scatter_" + patch.collider.name
+		patch.scatter.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var multi := MultiMesh.new()
+		multi.transform_format = MultiMesh.TRANSFORM_3D
+		multi.mesh = _boulder_mesh()
+		patch.scatter.multimesh = multi
+		add_child(patch.scatter)
+
+	var up: Vector3 = patch.centre.normalized()
+	var axis_a: Vector3 = up.cross(Vector3.UP)
+	if axis_a.length_squared() < 0.001:
+		axis_a = up.cross(Vector3.RIGHT)
+	axis_a = axis_a.normalized()
+	var axis_b: Vector3 = up.cross(axis_a)
+
+	# Sample inside the patch the collision covers and no further: a boulder
+	# past its edge stands on ground that has no collision under it, and an
+	# astronaut walking out to it drops through the world to reach it.
+	var reach: float = _patch_angle() * 0.92
+	var multimesh: MultiMesh = patch.scatter.multimesh
+	var placed: int = 0
+	var transforms: Array[Transform3D] = []
+	transforms.resize(scatter_count)
+
+	# A grid of cells with one jittered boulder each, rather than free random
+	# points: free points clump, and a clump of boulders reads as a pile
+	# somebody left rather than as a scattered field.
+	var side: int = maxi(1, int(ceil(sqrt(float(scatter_count)))))
+	for index in scatter_count:
+		var cell_x: int = index % side
+		var cell_y: int = index / side
+		var jitter_x: float = _hash01(cell_x, cell_y, 1)
+		var jitter_y: float = _hash01(cell_x, cell_y, 2)
+		var u: float = ((cell_x + jitter_x) / side * 2.0 - 1.0) * reach
+		var v: float = ((cell_y + jitter_y) / side * 2.0 - 1.0) * reach
+		var dir: Vector3 = (up + axis_a * u + axis_b * v).normalized()
+
+		if not is_land_at(dir):
+			continue
+		# Slope from the height field directly, sampled either side of the
+		# point. Cheaper and more honest than reading it back off the mesh.
+		var probe: float = _patch_angle() * 0.02
+		var here: float = get_surface_radius_at(dir)
+		var da: float = get_surface_radius_at((dir + axis_a * probe).normalized())
+		var db: float = get_surface_radius_at((dir + axis_b * probe).normalized())
+		var run: float = probe * surface_radius
+		var slope: Vector2 = Vector2(da - here, db - here) / maxf(run, 0.001)
+		if slope.length() > scatter_max_slope:
+			continue
+
+		var scale: float = lerpf(scatter_size.x, scatter_size.y,
+			_hash01(cell_x, cell_y, 3))
+		var spin: float = _hash01(cell_x, cell_y, 4) * TAU
+		# Sunk slightly, so they sit in the ground instead of resting on it.
+		var at: Vector3 = dir * (here - scale * 0.28)
+		var basis := Basis.looking_at(axis_a, dir).rotated(dir, spin).scaled(
+			Vector3(scale, scale, scale))
+		transforms[placed] = Transform3D(basis, at)
+		placed += 1
+
+	if OS.is_stdout_verbose():
+		print("scatter %s: %d of %d placed" % [name, placed, scatter_count])
+	multimesh.instance_count = placed
+	for i in placed:
+		multimesh.set_instance_transform(i, transforms[i])
+	patch.scatter_centre = patch.centre
+
+
+## Deterministic [0, 1) from three integers. Placement has to be a function of
+## where a boulder is, not of the order it was generated in.
+func _hash01(x: int, y: int, salt: int) -> float:
+	var h: int = (x * 73856093) ^ (y * 19349663) ^ (salt * 83492791) ^ (terrain_seed * 2654435761)
+	h = h & 0x7fffffff
+	h = (h ^ (h >> 13)) * 1274126177
+	h = h & 0x7fffffff
+	return float(h % 1000003) / 1000003.0
+
+
+## One lumpy rock, shared by every boulder on this planet. A sphere pushed
+## around by the planet's own noise: distinct enough at the size these are
+## drawn, and it costs one mesh rather than an art pipeline.
+func _boulder_mesh() -> ArrayMesh:
+	if _boulder != null:
+		return _boulder
+	var source := SphereMesh.new()
+	source.radial_segments = 10
+	source.rings = 6
+	source.radius = 0.5
+	source.height = 1.0
+
+	var lump := FastNoiseLite.new()
+	lump.seed = terrain_seed + 71
+	lump.frequency = 1.4
+
+	var arrays: Array = source.get_mesh_arrays()
+	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	for i in verts.size():
+		var v: Vector3 = verts[i]
+		var n: Vector3 = v.normalized()
+		verts[i] = v * (1.0 + lump.get_noise_3dv(n * 3.0) * 0.45)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	# The normals no longer match the vertices they were generated for, and a
+	# faceted rock is the look wanted anyway.
+	arrays[Mesh.ARRAY_NORMAL] = null
+	arrays[Mesh.ARRAY_TANGENT] = null
+
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = scatter_color if scatter_color.a > 0.0 else color_rock
+	mat.roughness = 0.94
+	mat.metallic = 0.0
+	mesh.surface_set_material(0, mat)
+	_boulder = mesh
+	return _boulder
 
 
 # Never leave a worker running against a freed planet.
