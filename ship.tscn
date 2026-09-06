@@ -15,6 +15,13 @@ size = Vector3(3.2, 0.2, 5.2)
 [sub_resource type="BoxShape3D" id="Shape_deck"]
 size = Vector3(3.2, 0.2, 5.2)
 
+[sub_resource type="BoxMesh" id="Mesh_floor"]
+material = SubResource("Mat_hull")
+size = Vector3(3.2, 0.2, 5.3)
+
+[sub_resource type="BoxShape3D" id="Shape_floor"]
+size = Vector3(3.2, 0.2, 5.3)
+
 [sub_resource type="BoxMesh" id="Mesh_wall"]
 material = SubResource("Mat_hull")
 size = Vector3(0.2, 2.4, 5.2)
@@ -108,12 +115,12 @@ _cabin_light = NodePath("LightSwitchCabin/CabinLight")
 _headlight = NodePath("CameraPivot/SpotLight3D")
 
 [node name="Floor" type="MeshInstance3D" parent="." unique_id=1815063688]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, 0)
-mesh = SubResource("Mesh_deck")
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, 0.05)
+mesh = SubResource("Mesh_floor")
 
 [node name="FloorShape" type="CollisionShape3D" parent="." unique_id=1423053872]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, 0)
-shape = SubResource("Shape_deck")
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, 0.05)
+shape = SubResource("Shape_floor")
 
 [node name="Roof" type="MeshInstance3D" parent="." unique_id=1186486781]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.5, 0)

@@ -255,7 +255,7 @@ func _physics_process(delta: float) -> void:
 
 	# Before parking and before the engines: a latched ship is held by the
 	# station and nothing else applies to it.
-	_process_docking(movement)
+	_process_docking(movement, delta)
 
 	_process_parking(movement)
 
@@ -529,6 +529,17 @@ func _process_flight_assist(dominant: Planet, movement: Vector3) -> void:
 @export var dock_align: float = -0.9
 ## How far off the centreline contact may be.
 @export var dock_lateral: float = 1.0
+## How long the latch takes to draw the two ports together, in seconds.
+##
+## Not zero, and not skippable. The tolerances above let a ship latch with its
+## port up to `dock_radius` from the station's, and something has to close that
+## distance or the doorway is left with a hole in its floor exactly as wide as
+## the docking error -- measured at 0.65 units on an ordinary autopilot
+## approach, which is a hole an astronaut walks into and falls through. Real
+## mechanisms are two-stage for this reason: soft capture takes whatever
+## arrives, then retraction pulls it square. Approaching well still matters,
+## because everything above still has to pass before any of this happens.
+@export var dock_capture_seconds: float = 0.8
 ## How closely the two "up" axes must agree, as a dot product.
 ##
 ## Not decoration. The astronaut walks through the join, and a ship latched
@@ -548,8 +559,14 @@ func _process_flight_assist(dominant: Planet, movement: Vector3) -> void:
 ## event than the one it causes.
 var docked_to: Station = null
 
-## Where the hull sits in the station's frame while latched.
+## Where the hull sits in the station's frame while latched. Interpolated from
+## the pose it arrived in toward the mated one over `dock_capture_seconds`.
 var _dock_local: Transform3D = Transform3D.IDENTITY
+## The pose it arrived in, and the pose retraction is pulling it to.
+var _dock_arrival: Transform3D = Transform3D.IDENTITY
+var _dock_mated: Transform3D = Transform3D.IDENTITY
+## Progress of the retraction, 0 at capture and 1 once the ports are together.
+var _dock_capture: float = 0.0
 
 
 func port_position() -> Vector3:
@@ -598,11 +615,29 @@ func try_dock(station: Station) -> bool:
 	# a planet's surface: the station orbits at eight units a second and a hull
 	# pinned in world space would be left behind immediately.
 	_dock_local = station.global_transform.affine_inverse() * global_transform
+	_dock_arrival = _dock_local
+	_dock_mated = _mating_local(station)
+	_dock_capture = 0.0
 	linear_velocity = Vector3.ZERO
 	angular_velocity = Vector3.ZERO
 	throttle = 0.0
 	clear_cruise()
 	return true
+
+
+## The pose retraction pulls the ship into, in the station's frame: the two
+## ports coincident and the two hulls square.
+func _mating_local(station: Station) -> Transform3D:
+	# Where the ship's *nose* has to point, in the station's frame. looking_at
+	# aims local -Z, so it wants the nose direction and not the port's, and with
+	# the port on the stern those are opposite. Read off port_axis rather than
+	# written down, so that moving the port again moves this with it.
+	var nose: Vector3 = station.port_axis * signf(port_axis.z)
+	var up := Vector3.UP
+	if absf(nose.dot(up)) > 0.99:
+		up = Vector3.RIGHT
+	var mated := Basis.looking_at(nose, up)
+	return Transform3D(mated, station.port_offset - mated * port_offset)
 
 
 ## Open or close both ends of the join together. They are one passage and a
@@ -643,7 +678,7 @@ func undock() -> void:
 ## An autopilot you have to switch off before you can leave is the same
 ## complaint as an autopilot you have to switch off to save yourself; the
 ## controls take the ship back here too.
-func _process_docking(movement: Vector3) -> void:
+func _process_docking(movement: Vector3, delta: float) -> void:
 	if docked_to == null:
 		return
 	if not is_instance_valid(docked_to):
@@ -653,6 +688,14 @@ func _process_docking(movement: Vector3) -> void:
 	if movement != Vector3.ZERO:
 		undock()
 		return
+	if _dock_capture < 1.0:
+		_dock_capture = minf(
+			1.0, _dock_capture + delta / maxf(dock_capture_seconds, 0.001))
+		# Interpolated from the arrival pose rather than from the current one:
+		# stepping a fraction of the remaining distance every tick approaches
+		# the mated pose without ever reaching it, and "almost closed" is the
+		# state this whole mechanism exists to get out of.
+		_dock_local = _dock_arrival.interpolate_with(_dock_mated, _dock_capture)
 	global_transform = docked_to.global_transform * _dock_local
 	linear_velocity = Vector3.ZERO
 	angular_velocity = Vector3.ZERO

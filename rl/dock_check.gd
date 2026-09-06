@@ -104,8 +104,44 @@ func _run() -> void:
 	if _ship.docked_to != _station:
 		return
 
+	# --- The join closes and its floor is solid ------------------------------
+	# The latch tolerates two units of port-to-port error, so what a ship
+	# arrives with is not what it keeps: retraction has to pull the ports
+	# together, or the doorway is left with a hole in its floor exactly as wide
+	# as the docking error. Measured before the retraction existed: a 0.65-unit
+	# slot across the full width of the threshold, which is a thing to fall
+	# through.
+	var arrived: float = _ship.port_position().distance_to(_station.port_position())
+	await _settle(int(_ship.dock_capture_seconds * 60.0) + 60)
+	var gap: float = _ship.port_position().distance_to(_station.port_position())
+	_check("retraction closes the join", gap < 0.05,
+		"%.3f units apart on arrival, %.4f after" % [arrived, gap])
+
+	var holes: int = 0
+	var probes: int = 0
+	var space := get_viewport().world_3d.direct_space_state
+	var x: float = -1.0
+	while x <= 1.0001:
+		var z: float = 2.2
+		while z <= 3.2001:
+			var from: Vector3 = _ship.global_transform * Vector3(x, 0.6, z)
+			var to: Vector3 = _ship.global_transform * Vector3(x, -2.4, z)
+			var query := PhysicsRayQueryParameters3D.create(from, to)
+			# The astronaut's own mask, not a convenient one: the hull it may
+			# not collide with is exactly the hull that cannot hold it up.
+			query.collision_mask = _astronaut.collision_mask
+			probes += 1
+			if space.intersect_ray(query).is_empty():
+				holes += 1
+			z += 0.05
+		x += 0.1
+	_check("floor is continuous across the doorway", holes == 0,
+		"%d of %d points with nothing under them" % [holes, probes])
+
 	# --- Latched -------------------------------------------------------------
 	# The station orbits; a hull pinned in world space is left behind at once.
+	# Measured from *after* the retraction, which is motion this asked for --
+	# baselined before it, the pull-in reads as two thirds of a unit of drift.
 	var held: Vector3 = _local(_ship.global_position)
 	await _settle(1800)
 	var drift: float = (_local(_ship.global_position) - held).length()

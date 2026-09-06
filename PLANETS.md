@@ -702,6 +702,19 @@ because it got close would make the whole approach pointless. The tolerances
 match `DockingEnv`'s exactly; if they drift apart, a policy is scored on a
 different event than the one it causes.
 
+**The latch retracts.** Passing the tolerances is not the same as arriving
+square: `dock_radius` permits two units of port-to-port error and an ordinary
+autopilot approach uses about 0.63 of it. Whatever is left over is a hole in
+the floor of the doorway exactly as wide as the docking error, and an astronaut
+walks into it. So capture is two-stage, as it is on real mechanisms: the test
+takes the ship however it arrives, and then `dock_capture_seconds` of retraction
+interpolates the pinned pose from where it latched to where the ports coincide.
+Measured, 0.632 units on arrival closing to 0.0005.
+
+That is not a softening of the approach. Every tolerance still has to pass
+before any of it happens; what retraction fixes is the slop the tolerances were
+always going to leave behind.
+
 Docked, the hull is held in the **station's** frame, the same trick
 `_process_parking` uses to ride a planet's surface. The station orbits at eight
 units a second and a hull pinned in world space is left behind immediately.
@@ -745,9 +758,15 @@ being:
   to within a dot product of 0.9, and the `DOCK` phase rolls the ship onto the
   station before it closes. Without it a ship can latch upside down relative to
   the deck, and gravity reverses in the doorway.
-- **The two floors are flush.** The station's port sits at deck level rather
-  than on the hull's centreline, because the ship's port is at its cabin floor.
-  Anywhere else and the join is a step the astronaut has to climb.
+- **The two floors are flush, and they meet.** The station's port sits at deck
+  level rather than on the hull's centreline, because the ship's port is at its
+  cabin floor. Anywhere else and the join is a step the astronaut has to climb.
+  Both decks also have to reach their own port plane: the ship's stopped 0.1
+  short of the ship's, which left a slot across the full width of the threshold
+  even with the ports perfectly mated. `rl/dock_check.tscn` now casts a grid of
+  441 rays down through the doorway on the astronaut's own collision mask —
+  the hull it may not collide with is exactly the hull that cannot hold it up —
+  and requires every one of them to find floor.
 - **The frame volumes have to overlap, generously.** `Astronaut._pick_frame`
   asks the ship first, so an airlock volume reaching back into where a docked
   ship's stern sits costs nothing. Sizing it for a *perfect* latch does not work:
