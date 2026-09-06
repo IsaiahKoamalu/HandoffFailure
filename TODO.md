@@ -89,12 +89,21 @@ Ordered roughly by how much they would change what we believe, not by effort.
 
 ## Physics
 
-- [ ] **A parked ship sits on a knife edge.** Parking needs relative speed under
-      `Ship._landing_speed` (0.2), and the ship's own residual drift sits right
-      around that value — so it flickers in and out of parked, and any nudge
-      that pushes it over stays pushed. On a slope it never parks at all and
-      creeps at ~0.13 units/s indefinitely. Raising the threshold treats the
-      symptom; the drift is the thing to fix.
+- [x] **A parked ship sits on a knife edge.** Parking needed relative speed
+      under `Ship._landing_speed` (0.2) *every tick*, and a ship sitting still
+      on its struts reads a steady 0.19 — because parking pins the position and
+      then stops updating the velocity that produced it, so `linear_velocity`
+      goes on accumulating gravity against a hull that is not moving. One tick
+      over the line un-parked it, and un-parked the mouse flies the hull instead
+      of panning the camera: the pilot looked around the landing site and the
+      ship went with them. Entering park is now a measurement (under
+      `_park_speed`, 0.75, held for 12 ticks) and staying parked is a decision
+      only the pilot reverses. `rl/surface_check.tscn` holds the line.
+- [ ] **The residual drift itself is unexplained.** A ship at rest reads 0.19
+      units/s against the surface and it does not decay. Parking no longer cares,
+      but something is still wrong in either the surface-velocity model or the
+      resting contact, and the next thing that reads that number will be misled
+      by it the same way.
 
 ## Documentation
 

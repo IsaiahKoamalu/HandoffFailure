@@ -120,6 +120,14 @@ var is_out_of_fuel: bool = false
 @export var _auto_orient_speed: float = 2.0
 ## Speed relative to the ground below which a landed ship parks itself.
 @export var _landing_speed: float = 0.2
+## Speed below which a ship on the ground latches to the surface. Deliberately
+## looser than _landing_speed: that one judges whether a landing was survivable,
+## this one only decides when to stop simulating a hull that has come to rest,
+## and a ship settling on its struts on rough ground never gets as quiet as a
+## clean touchdown does.
+@export var _park_speed: float = 0.75
+## Physics ticks the ship must stay under _park_speed before it latches.
+@export var _park_settle_ticks: int = 12
 
 ## Gravity of the dominant planet, as a force. Zero when in open space.
 var closest_force: Vector3 = Vector3.ZERO
@@ -199,6 +207,9 @@ var _since_steer: float = 999.0
 
 var _surface_position: Vector3 = Vector3.ZERO
 var _is_parked: bool = false
+## Consecutive ticks spent slow enough to park, so a bouncing ship does not
+## latch mid-hop.
+var _settled_ticks: int = 0
 var _ramp_degrees: float = 0.0
 var _mouse_delta: Vector2 = Vector2.ZERO
 
@@ -940,19 +951,39 @@ func _process_parking(movement: Vector3) -> void:
 	# point, so buoyancy would keep accumulating velocity against a frozen
 	# position and then release it all at once when the ship un-parks.
 	var ground: Planet = get_ground()
-	var should_park: bool = (movement == Vector3.ZERO) \
+	var holds: bool = (movement == Vector3.ZERO) \
 		and (ground != null) \
-		and (not is_submerged) \
-		and (ground.get_relative_velocity_to_surface(global_position, linear_velocity).length() < _landing_speed)
+		and (not is_submerged)
 
-	if should_park:
-		if _is_parked:
-			global_position = ground.to_global(_surface_position)
-		else:
-			_surface_position = ground.to_local(global_position)
-			_is_parked = true
-	else:
+	if not holds:
 		_is_parked = false
+		return
+
+	# Already parked: stay parked. The speed test is deliberately NOT repeated
+	# here, because parking pins the position and stops updating the velocity
+	# that produced it -- linear_velocity goes on accumulating gravity against a
+	# hull that is not moving, so a ship sitting still on its struts reads a
+	# steady 0.19 m/s against a 0.2 threshold. It only has to tick over that to
+	# un-park, and then the mouse is flying the ship instead of panning the
+	# camera: the pilot looks left and the hull follows, grinds into the ground,
+	# and is ejected hard enough to stay un-parked. Entering is a measurement;
+	# staying is a decision, and only the pilot reverses it.
+	if _is_parked:
+		global_position = ground.to_global(_surface_position)
+		return
+
+	var rest: float = ground.get_relative_velocity_to_surface(
+		global_position, linear_velocity).length()
+	if rest >= _park_speed:
+		_settled_ticks = 0
+		return
+	# Held for a moment rather than caught on one frame, so a ship still
+	# bouncing off its first contact does not latch mid-hop.
+	_settled_ticks += 1
+	if _settled_ticks < _park_settle_ticks:
+		return
+	_surface_position = ground.to_local(global_position)
+	_is_parked = true
 
 
 # Mouse movement is banked as a pending turn rather than applied straight to the

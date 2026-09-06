@@ -34,6 +34,8 @@ python/ppo.py  <--- JSON over TCP, one exchange per decision --->  rl/train.tscn
 | `rl/journey_check.tscn` | Flies whole journeys end to end, planet to planet |
 | `rl/dock_check.tscn` | Docks at a station in game, then walks the astronaut around it |
 | `rl/view_check.tscn` | Renders one frame from the pilot's seat to a PNG, to look at the hull |
+| `rl/surface_check.tscn` | Lands at five sites and checks the ship parks, holds still while the pilot pans, and can be walked back into |
+| `rl/scatter_check.tscn` | Checks the boulders are in the same places when the terrain patch streams |
 
 ## Setup
 

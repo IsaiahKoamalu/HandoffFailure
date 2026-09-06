@@ -887,11 +887,23 @@ func _slope_at(dir: Vector3) -> float:
 
 ## Fill a patch's boulder field for wherever it has just been recentred.
 ##
-## Placement is a hash of the boulder's own grid cell rather than a running
-## random sequence, so a patch rebuilt after the client walks away and comes
-## back puts the same rocks in the same places. A sequence would reshuffle the
-## landscape every time it streamed, which is worse than having no rocks: the
-## ground would visibly change behind you.
+## Every boulder's position, size and spin is a hash of the cell it stands in on
+## a lattice fixed to the PLANET -- not to the patch. That distinction is the
+## whole of this function's difficulty, and getting it wrong is invisible in a
+## screenshot and obvious in ten seconds of walking.
+##
+## The patch is recentred on wherever its client is, so a grid laid out across
+## the patch has its origin under the player's feet. Hashing a boulder by its
+## index in that grid means cell (3, 7) is a different place on the ground every
+## time the patch rebuilds: the rocks are stable in patch space and therefore
+## teleport in world space, vanishing and reappearing somewhere else each time
+## the streaming ticks over. That is exactly what this used to do.
+##
+## So the lattice is cube-face coordinates on the sphere -- the same projection
+## the terrain mesh is built from -- at a fixed number of cells per face. A cell
+## is a place on the planet and always was, whether or not anyone is near it.
+## The tangent grid still exists, but only to sweep the patch for which lattice
+## cells fall inside it, and duplicates are dropped.
 func _populate_scatter(patch: Patch) -> void:
 	if not scatter_enabled or not _drawing() or scatter_count <= 0:
 		return
@@ -921,24 +933,41 @@ func _populate_scatter(patch: Patch) -> void:
 	# past its edge stands on ground that has no collision under it, and an
 	# astronaut walking out to it drops through the world to reach it.
 	var reach: float = _patch_angle() * 0.92
-	var multimesh: MultiMesh = patch.scatter.multimesh
-	var placed: int = 0
-	var transforms: Array[Transform3D] = []
-	transforms.resize(scatter_count)
-
-	# A grid of cells with one jittered boulder each, rather than free random
-	# points: free points clump, and a clump of boulders reads as a pile
-	# somebody left rather than as a scattered field.
+	# Cells per cube-face edge, chosen so a patch holds roughly scatter_count of
+	# them. A face edge spans a quarter turn, so this is that divided by the
+	# angular size of one cell.
 	var side: int = maxi(1, int(ceil(sqrt(float(scatter_count)))))
-	for index in scatter_count:
-		var cell_x: int = index % side
-		var cell_y: int = index / side
-		var jitter_x: float = _hash01(cell_x, cell_y, 1)
-		var jitter_y: float = _hash01(cell_x, cell_y, 2)
-		var u: float = ((cell_x + jitter_x) / side * 2.0 - 1.0) * reach
-		var v: float = ((cell_y + jitter_y) / side * 2.0 - 1.0) * reach
-		var dir: Vector3 = (up + axis_a * u + axis_b * v).normalized()
+	var cell_angle: float = 2.0 * reach / float(side)
+	var lattice: int = maxi(1, int(round((PI * 0.5) / maxf(cell_angle, 1e-6))))
 
+	# Sweep the patch at half a cell so no cell inside it is stepped over, and
+	# let the dictionary throw away the cells hit more than once.
+	var sweep: int = side * 2
+	var seen: Dictionary = {}
+	var transforms: Array[Transform3D] = []
+
+	for index in sweep * sweep:
+		var sx: int = index % sweep
+		var sy: int = index / sweep
+		var u: float = ((sx + 0.5) / sweep * 2.0 - 1.0) * reach
+		var v: float = ((sy + 0.5) / sweep * 2.0 - 1.0) * reach
+		var probe_dir: Vector3 = (up + axis_a * u + axis_b * v).normalized()
+
+		# Cube-face cell this sample lands in. `cell` is (face, x, y), and it is
+		# the same triple for the same patch of ground forever.
+		var cell: Vector3i = _lattice_cell(probe_dir, lattice)
+		var key: int = (cell.x * lattice + cell.y) * lattice + cell.z
+		if seen.has(key):
+			continue
+		seen[key] = true
+
+		var dir: Vector3 = _lattice_direction(cell, lattice,
+			_hash01(cell.y, cell.z, 101 + cell.x),
+			_hash01(cell.y, cell.z, 111 + cell.x))
+		# The jitter can walk a cell's boulder just outside the swept square,
+		# and the collision does not extend that far.
+		if dir.dot(up) < cos(reach):
+			continue
 		if not is_land_at(dir):
 			continue
 		# Slope from the height field directly, sampled either side of the
@@ -953,21 +982,61 @@ func _populate_scatter(patch: Patch) -> void:
 			continue
 
 		var scale: float = lerpf(scatter_size.x, scatter_size.y,
-			_hash01(cell_x, cell_y, 3))
-		var spin: float = _hash01(cell_x, cell_y, 4) * TAU
+			_hash01(cell.y, cell.z, 121 + cell.x))
+		var spin: float = _hash01(cell.y, cell.z, 131 + cell.x) * TAU
 		# Sunk slightly, so they sit in the ground instead of resting on it.
 		var at: Vector3 = dir * (here - scale * 0.28)
 		var basis := Basis.looking_at(axis_a, dir).rotated(dir, spin).scaled(
 			Vector3(scale, scale, scale))
-		transforms[placed] = Transform3D(basis, at)
-		placed += 1
+		transforms.append(Transform3D(basis, at))
+		if transforms.size() >= scatter_count:
+			break
 
 	if OS.is_stdout_verbose():
-		print("scatter %s: %d of %d placed" % [name, placed, scatter_count])
-	multimesh.instance_count = placed
-	for i in placed:
+		print("scatter %s: %d of %d placed over %d cells" % [
+			name, transforms.size(), scatter_count, seen.size()])
+	var multimesh: MultiMesh = patch.scatter.multimesh
+	multimesh.instance_count = transforms.size()
+	for i in transforms.size():
 		multimesh.set_instance_transform(i, transforms[i])
 	patch.scatter_centre = patch.centre
+
+
+## Which cell of the planet-fixed cube lattice a direction falls in, as
+## (face, x, y). The face is the axis the direction points most strongly along,
+## and x and y are the other two components divided by that one -- which is the
+## cube-sphere projection the terrain mesh already uses, so a lattice cell is
+## the same shape as the ground under it.
+func _lattice_cell(dir: Vector3, lattice: int) -> Vector3i:
+	var a: Vector3 = dir.abs()
+	var axis: int = 0
+	if a.y > a.x and a.y >= a.z:
+		axis = 1
+	elif a.z > a.x and a.z > a.y:
+		axis = 2
+	var m: float = maxf(a[axis], 1e-9)
+	var sign_bit: int = 0 if dir[axis] >= 0.0 else 1
+	var s: float = dir[(axis + 2) % 3] / m
+	var t: float = dir[(axis + 1) % 3] / m
+	return Vector3i(
+		axis * 2 + sign_bit,
+		clampi(int(floor((s + 1.0) * 0.5 * lattice)), 0, lattice - 1),
+		clampi(int(floor((t + 1.0) * 0.5 * lattice)), 0, lattice - 1))
+
+
+## The inverse: a point inside a lattice cell, at the given fractions across it.
+func _lattice_direction(cell: Vector3i, lattice: int, fx: float, fy: float) -> Vector3:
+	var axis: int = cell.x / 2
+	var sign_value: float = 1.0 if cell.x % 2 == 0 else -1.0
+	var s: float = (cell.y + fx) / float(lattice) * 2.0 - 1.0
+	var t: float = (cell.z + fy) / float(lattice) * 2.0 - 1.0
+	var dir := Vector3.ZERO
+	dir[axis] = sign_value
+	# Not scaled by the sign: `s` and `t` were divided by the magnitude of the
+	# dominant component, so they are already the values this face needs.
+	dir[(axis + 2) % 3] = s
+	dir[(axis + 1) % 3] = t
+	return dir.normalized()
 
 
 ## Deterministic [0, 1) from three integers. Placement has to be a function of
