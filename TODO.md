@@ -69,11 +69,14 @@ Ordered roughly by how much they would change what we believe, not by effort.
       that walking through them does not read as a bug, which is a workaround
       rather than a fix. A single convex shape per instance on the few nearest
       the client would cover it without paying for several hundred.
-- [ ] **Nothing on a planet is worth flying to.** The worlds now look different
-      from each other and have ground worth standing on, but there is no reason
-      to pick one landing site over another -- no wrecks, outposts, beacons or
-      anomalies. Surface sites the navigation panel could target are the
-      cheapest thing that would turn scenery into somewhere to go.
+- [ ] **Surveying a site does nothing but tick a counter.** The sites exist,
+      are targetable and remember being visited, but finding all five on a world
+      earns nothing. Fuel, a nav upgrade, or simply a log entry describing what
+      was found would each close the loop.
+- [ ] **A landmark can be placed on ground the ship cannot land beside.** The
+      slope test rejects steep sites, but nothing checks that there is a flat
+      approach, and on Ember a single ridge is enough to hide one from twelve
+      metres away.
 - [ ] **The ship's fuel budget is enabled and there is exactly one place to
       refill it.** 900 seconds is generous and the station tops it up, but a
       pilot who runs dry on the far side of Thule has no recourse at all. Either

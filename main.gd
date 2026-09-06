@@ -166,13 +166,35 @@ func _capture_radius(planet: Planet) -> float:
 # currently controlling. Lives here rather than on the ship or the astronaut so
 # it keeps working across a swap.
 ## Everything that can be navigated to, planets first.
+## What [Tab] cycles through: every planet, every station, and the surface sites
+## of whichever world you are currently at.
+##
+## Only that world's sites, deliberately. Every landmark in the system is
+## twenty-odd entries, and a target list you have to page through is not a
+## navigation aid. The ones on the planet under you are the ones worth a heading.
 func targets() -> Array[Node3D]:
 	var all: Array[Node3D] = []
 	for planet in Planets:
 		all.append(planet)
 	for station in Stations:
 		all.append(station)
+	var here: Planet = get_dominant_planet(_nav_position())
+	if here != null:
+		for site in here.landmarks:
+			all.append(site)
 	return all
+
+
+## Where the player is, for anything that needs to know which world is "here".
+## The astronaut when they are the one being controlled, otherwise the ship.
+func _nav_position() -> Vector3:
+	var ship: Node3D = null
+	for client in _terrain_clients:
+		if client is Astronaut and (client as Astronaut).is_active:
+			return client.global_position
+		if client is Ship:
+			ship = client
+	return ship.global_position if ship != null else Vector3.ZERO
 
 
 ## Step to the next body, wrapping through "no target" so it can be cleared.
@@ -196,6 +218,9 @@ static func target_radius(node: Node3D) -> float:
 		return (node as Planet).surface_radius
 	if node is Station:
 		return (node as Station).approach_range
+	# A landmark is a thing you land next to, so "arrived" is a few metres.
+	if node is Landmark:
+		return 4.0
 	return 0.0
 
 
@@ -207,6 +232,14 @@ static func target_velocity(node: Node3D) -> Vector3:
 		return (node as Planet).constant_linear_velocity
 	if node is Station:
 		return (node as Station).constant_linear_velocity
+	# A landmark orbits with its planet *and* turns with its spin, and at a
+	# planet's surface the spin term is the larger of the two. Reporting only
+	# the orbital part would show a closing speed on a site you are keeping
+	# station with.
+	if node is Landmark:
+		var site: Landmark = node
+		if site.planet != null:
+			return site.planet.get_surface_velocity(site.global_position)
 	return Vector3.ZERO
 
 
@@ -257,6 +290,9 @@ func save_game() -> bool:
 		"astronaut_velocity": astronaut.get_world_velocity(),
 		"astronaut_active": astronaut.is_active,
 		"astronaut_lamp": astronaut.is_lamp_on,
+		# Position is a pure function of the seed, as everything on these worlds
+		# is; which ones have been visited is not, so it is all that is stored.
+		"surveyed": _surveyed_ids(),
 	}
 
 	var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
@@ -265,6 +301,16 @@ func save_game() -> bool:
 		return false
 	file.store_var(data)
 	return true
+
+
+## Site ids of everything surveyed so far.
+func _surveyed_ids() -> Array[String]:
+	var ids: Array[String] = []
+	for planet in Planets:
+		for site in planet.landmarks:
+			if site.discovered:
+				ids.append(site.site_id)
+	return ids
 
 
 func load_game() -> bool:
@@ -306,6 +352,12 @@ func load_game() -> bool:
 	ship.is_headlight_on = data["ship_headlight"]
 	ship.is_cabin_switch = data["ship_cabin_light"]
 	ship.apply_light_state()
+
+	# .get, not [], so a save written before landmarks existed still loads.
+	var surveyed: Array = data.get("surveyed", [])
+	for planet in Planets:
+		for site in planet.landmarks:
+			site.discovered = surveyed.has(site.site_id)
 
 	astronaut.set_active(data["astronaut_active"])
 	astronaut.is_lamp_on = data["astronaut_lamp"]

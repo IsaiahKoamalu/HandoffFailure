@@ -26,6 +26,12 @@ var _settle: float = 0.0
 ## answering "which of these three shells is washing the picture out", which is
 ## not a question you can answer by looking at the finished frame.
 var _hide: PackedStringArray = PackedStringArray()
+## Which of a planet's sites to frame, for --shot=site.
+var _site: int = -1
+
+
+func _site_index() -> int:
+	return maxi(_site, 0)
 
 var _world: Node
 var _camera: Camera3D
@@ -43,6 +49,7 @@ func _ready() -> void:
 			"--planet": _planet_index = int(pair[1])
 			"--settle": _settle = float(pair[1])
 			"--hide": _hide = pair[1].split(",")
+			"--site": _site = int(pair[1])
 
 	_world = load(MAIN_SCENE).instantiate()
 	add_child(_world)
@@ -172,6 +179,36 @@ func _run() -> void:
 				dir2 * (ground2 + planet.surface_radius * 0.06))
 			_look(eye2, planet.to_global(
 				(dir2 + along * 0.5).normalized() * ground2), dir2)
+		"site":
+			# A surface site, framed from the ground beside it. Uses the site's
+			# own placement rather than looking for good ground: the point is to
+			# see what the planet put there.
+			if planet.landmarks.is_empty():
+				push_error("%s has no landmarks" % planet.name)
+			else:
+				# --site picks by index; without one, the most sunlit site, or
+				# the shot is a picture of an unlit mast on a night side.
+				var site: Landmark = planet.landmarks[
+					clampi(_site_index(), 0, planet.landmarks.size() - 1)]
+				if _site < 0:
+					var toward_sun: Vector3 = (_world.get_node("Sun").global_position
+						- planet.global_position).normalized()
+					var best_lit: float = -INF
+					for candidate in planet.landmarks:
+						var lit: float = (candidate.global_position
+							- planet.global_position).normalized().dot(toward_sun)
+						if lit > best_lit:
+							best_lit = lit
+							site = candidate
+				var here: Vector3 = site.global_position
+				var up: Vector3 = (here - planet.global_position).normalized()
+				var side: Vector3 = up.cross(Vector3.UP).normalized()
+				# Well above the site, looking down at it. Level with it, a
+				# single ridge between the two hides the whole thing on a world
+				# as rough as Ember -- the site reported as on screen and the
+				# frame had terrain where it should have been.
+				_look(here + up * 9.0 + side * 10.0 + side.cross(up) * 7.0,
+					here + up * 2.0, up)
 		"system":
 			# The whole system from above and outside, for scale and orbits.
 			_look(sun.global_position + Vector3(2600.0, 2400.0, 2600.0),
@@ -275,6 +312,16 @@ func _report(planet: Planet) -> void:
 	var current: Camera3D = get_viewport().get_camera_3d()
 	print("rendering from %s" % ("the shot camera" if current == _camera
 		else ("'%s'" % current.name if current != null else "NO CAMERA")))
+	for site in planet.landmarks:
+		var behind: bool = _camera.is_position_behind(site.global_position)
+		var at := Vector2(-1.0, -1.0)
+		if not behind:
+			at = _camera.unproject_position(site.global_position)
+		print("site %s (%s) %.1f from camera, %d children, %s at %.0f,%.0f" % [
+			site.name, Landmark.kind_name(site.kind),
+			site.global_position.distance_to(camera),
+			site.get_child_count(),
+			"BEHIND" if behind else "screen", at.x, at.y])
 	for station in SolarSystem.Instance.Stations:
 		print("station %s %.1f from camera" % [
 			station.name, station.global_position.distance_to(camera)])

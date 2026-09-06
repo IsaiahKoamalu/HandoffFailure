@@ -93,7 +93,7 @@ class_name Planet
 ## Colour the limb takes where the light is grazing. Sunrise, essentially.
 @export var atmosphere_sunset_color: Color = Color(1.0, 0.55, 0.28)
 ## Shell height as a fraction of surface_radius.
-@export_range(0.005, 0.2, 0.001) var atmosphere_height: float = 0.035
+@export_range(0.005, 0.3, 0.001) var atmosphere_height: float = 0.1
 @export_range(0.0, 4.0, 0.05) var atmosphere_density: float = 1.0
 
 @export_category("Clouds")
@@ -102,7 +102,11 @@ class_name Planet
 ## How much of the sky is covered. 0 is clear, 1 is solid overcast.
 @export_range(0.0, 1.0, 0.01) var cloud_coverage: float = 0.45
 ## Cloud deck height as a fraction of surface_radius.
-@export_range(0.002, 0.1, 0.001) var cloud_height: float = 0.018
+##
+## Has to clear the terrain by more than head height. At 0.018 on a 180-unit
+## world the deck sits three metres up, which looks correct from orbit and puts
+## an astronaut standing on a hill above the weather.
+@export_range(0.01, 0.3, 0.001) var cloud_height: float = 0.06
 ## Drift relative to the ground, in degrees per second. Small: weather that
 ## visibly races across a landscape reads as a spinning texture, not weather.
 @export_range(0.0, 5.0, 0.01) var cloud_drift: float = 0.35
@@ -156,6 +160,14 @@ class_name Planet
 ## Boulders on a cliff face look stuck on, because they are.
 @export_range(0.0, 1.0, 0.01) var scatter_max_slope: float = 0.55
 
+@export_category("Landmarks")
+## Sites on the surface worth flying to: a beacon, a wreck, a mineral outcrop.
+##
+## Distinct terrain and weather give a world a character; they do not give a
+## pilot a reason to prefer one landing site over another. These do, and they
+## are what the navigation panel can be pointed at once you are in orbit.
+@export_range(0, 12, 1) var landmark_count: int = 0
+
 var standard_gravitational_parameter: float = 0.0
 
 var _continents: FastNoiseLite
@@ -168,6 +180,8 @@ var _far_mesh: ArrayMesh = null
 var _clouds: Node3D = null
 ## The one boulder mesh every scattered rock on this planet instances.
 var _boulder: ArrayMesh = null
+## Surface sites, in the order they were placed.
+var landmarks: Array[Landmark] = []
 ## One streamed patch per terrain client, keyed by the client node.
 ##
 ## Deliberately not a single shared patch: two clients standing apart on the
@@ -330,6 +344,11 @@ func _build_terrain() -> void:
 			_build_atmosphere()
 		if clouds_enabled:
 			_build_clouds()
+	# Landmarks are built even without a renderer: they are collidable geometry
+	# and a navigation target, not decoration, and the checks that fly to them
+	# run headless.
+	if landmark_count > 0:
+		_build_landmarks()
 
 
 ## Material for the terrain mesh.
@@ -794,6 +813,76 @@ func _adopt_finished(patch: Patch) -> void:
 		patch.centre = patch.pending_centre
 		patch.result = null
 		_populate_scatter(patch)
+
+
+## Place the surface sites, at positions that are a pure function of the seed.
+##
+## Spread by rejection rather than by construction: candidates that are at sea,
+## on a slope too steep to stand a mast on, or too close to a site already
+## placed are thrown away and the next hash is tried. Simple, and it cannot
+## produce the clustered-at-a-pole result that sampling angles uniformly does.
+func _build_landmarks() -> void:
+	var placed: Array[Vector3] = []
+	var attempt: int = 0
+	while landmarks.size() < landmark_count and attempt < 600:
+		var index: int = attempt
+		attempt += 1
+		# Two hashes into a direction, rejection-sampled onto the sphere so the
+		# distribution is uniform over area rather than over latitude.
+		var dir := Vector3(
+			_hash01(index, 0, 101) * 2.0 - 1.0,
+			_hash01(index, 0, 102) * 2.0 - 1.0,
+			_hash01(index, 0, 103) * 2.0 - 1.0)
+		if dir.length_squared() < 0.05 or dir.length_squared() > 1.0:
+			continue
+		dir = dir.normalized()
+
+		if not is_land_at(dir):
+			continue
+		var too_close: bool = false
+		for other in placed:
+			if other.dot(dir) > cos(0.55):
+				too_close = true
+				break
+		if too_close:
+			continue
+		if _slope_at(dir) > 0.35:
+			continue
+
+		var site := Landmark.new()
+		site.kind = ([Landmark.Kind.BEACON, Landmark.Kind.WRECK,
+			Landmark.Kind.OUTCROP][landmarks.size() % 3]) as Landmark.Kind
+		site.planet = self
+		site.site_id = "%d-%d" % [terrain_seed, landmarks.size() + 1]
+		site.name = "Landmark%d" % (landmarks.size() + 1)
+		# Standing on the ground, with its own up along the local vertical.
+		var up: Vector3 = dir
+		var side: Vector3 = up.cross(Vector3.UP)
+		if side.length_squared() < 0.001:
+			side = up.cross(Vector3.RIGHT)
+		site.transform = Transform3D(
+			Basis.looking_at(side.normalized(), up),
+			dir * get_surface_radius_at(dir))
+		add_child(site)
+		landmarks.append(site)
+		placed.append(dir)
+
+
+## Steepness of the ground at a planet-local direction, as a gradient. Sampled
+## from the height field either side of the point rather than read off the mesh,
+## which is cheaper and cannot disagree with where the collision will be.
+func _slope_at(dir: Vector3) -> float:
+	var axis_a: Vector3 = dir.cross(Vector3.UP)
+	if axis_a.length_squared() < 0.001:
+		axis_a = dir.cross(Vector3.RIGHT)
+	axis_a = axis_a.normalized()
+	var axis_b: Vector3 = dir.cross(axis_a)
+	var probe: float = 0.01
+	var here: float = get_surface_radius_at(dir)
+	var da: float = get_surface_radius_at((dir + axis_a * probe).normalized())
+	var db: float = get_surface_radius_at((dir + axis_b * probe).normalized())
+	var run: float = probe * surface_radius
+	return Vector2(da - here, db - here).length() / maxf(run, 0.001)
 
 
 ## Fill a patch's boulder field for wherever it has just been recentred.

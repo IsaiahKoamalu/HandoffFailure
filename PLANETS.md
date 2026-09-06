@@ -658,6 +658,34 @@ They have **no collision**, which is why they are sized to about knee height. A
 rock you can see over is one you do not expect to stop you; sized waist-high and
 up they read as obstacles, and walking through an obstacle looks broken.
 
+## Surface sites
+
+`landmark.gd`. A handful of places per world worth flying to: a beacon (a mast
+with a light, the one you can find from the air), a wreck, and a mineral
+outcrop that lights its own ground. Distinct terrain and weather give a world a
+character; they do not give a pilot a reason to prefer one landing site over
+another, and these do.
+
+Placed by the planet from its own seed, as children of it, so they ride the
+surface through the spin exactly as terrain does. Placement is by **rejection**
+— candidates at sea, on ground too steep to stand a mast on, or too close to a
+site already placed are discarded and the next hash is tried — because
+constructing a spread directly is fiddly and sampling angles uniformly clusters
+everything at the poles.
+
+They are targetable. `SolarSystem.targets()` appends the sites of whichever
+world you are currently at, and only that world's: every landmark in the system
+is twenty-odd entries, and a target list you page through is not a navigation
+aid. `target_velocity` for a landmark is the planet's **surface** velocity, not
+its orbital one — at a planet's surface the spin term is the larger of the two,
+and reporting only the orbit shows a closing speed on a site you are keeping
+station with.
+
+Nothing about a site is saved except which ones have been surveyed. Position is
+a pure function of the seed, like everything else on these worlds. The save
+reads that list with `.get`, so a save written before landmarks existed still
+loads.
+
 ## Life support and the jetpack
 
 The astronaut carries oxygen and a small jetpack. Both refill in air, and what

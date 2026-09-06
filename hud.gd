@@ -292,7 +292,11 @@ func _draw_navigation(screen: Vector2, on_foot: bool) -> void:
 		else _ship.linear_velocity
 
 	var width: float = 280.0
+	# One line taller when the world under you has sites to survey.
+	var here_now: Planet = system.get_dominant_planet(body.global_position)
 	var height: float = 122.0
+	if here_now != null and not here_now.landmarks.is_empty():
+		height = 142.0
 	var rect := Rect2(Vector2(screen.x - MARGIN - width, MARGIN),
 		Vector2(width, height))
 	_panel(rect)
@@ -320,6 +324,16 @@ func _draw_navigation(screen: Vector2, on_foot: bool) -> void:
 			- here.get_surface_radius_at(local.normalized())
 		_text(at, here.label())
 		_text_right(Vector2(rect.end.x - PAD, at.y), "alt " + _distance(altitude))
+		if not here.landmarks.is_empty():
+			at.y += LINE
+			var found: int = 0
+			for site in here.landmarks:
+				if site.discovered:
+					found += 1
+			_text(at, "sites surveyed", TEXT_DIM, 13)
+			_text_right(Vector2(rect.end.x - PAD, at.y),
+				"%d / %d" % [found, here.landmarks.size()],
+				GOOD if found == here.landmarks.size() else TEXT, 13)
 	at.y += LINE
 
 	if system.target == null:
@@ -349,6 +363,8 @@ func _target_name(target: Node3D) -> String:
 		return (target as Planet).label()
 	if target is Station:
 		return (target as Station).label()
+	if target is Landmark:
+		return (target as Landmark).label()
 	return target.name
 
 
