@@ -504,12 +504,19 @@ func _process_flight_assist(dominant: Planet, movement: Vector3) -> void:
 # ends of the join the same three questions and never has to know which is
 # which.
 
-## Where the ship's port sits, in its own frame. On the nose, which is -Z, and
-## flush with the outer face of it: anything sticking out in front would be
-## inside the station's docking tunnel when the two faces meet.
-@export var port_offset: Vector3 = Vector3(0.0, 0.0, -2.7)
+## Where the ship's port sits, in its own frame. On the stern, which is +Z, and
+## flush with the outer face of it: anything sticking out behind would be inside
+## the station's docking tunnel when the two faces meet.
+##
+## The stern rather than the nose because the stern is already the door. The
+## ramp is the aft wall of the cabin and the only opening in the hull an
+## astronaut ever walks through, so docking there joins the tunnel to the
+## passage that exists instead of cutting a second one in the cockpit. The cost
+## is that the ship has to back in, which the pilot cannot see out of — see the
+## turn law in ShipAutopilot._run_dock.
+@export var port_offset: Vector3 = Vector3(0.0, 0.0, 2.7)
 ## Outward normal of the port face, in the ship's own frame.
-@export var port_axis: Vector3 = Vector3(0.0, 0.0, -1.0)
+@export var port_axis: Vector3 = Vector3(0.0, 0.0, 1.0)
 
 
 @export_category("Docking")
@@ -529,16 +536,11 @@ func _process_flight_assist(dominant: Planet, movement: Vector3) -> void:
 ## Real ports are keyed for the same reason.
 @export var dock_roll: float = 0.9
 
-## The nose hatch. Hidden and un-collided while docked, which is the whole of
-## what "the airlock is open" means here.
-##
-## It is glazed, and so are the cheeks either side of it. The whole nose used to
-## be one pane of glass and the pilot looks straight through it, so cutting a
-## door out of that pane in opaque hull put a panel across the middle of the
-## forward view. Glass with collision is what the windshield always was; the
-## hatch is a door with a window in it, which is what a door in the front of a
-## cockpit would be.
-@export var nose_hatch: Node3D
+## The nose is fixed glazing and no longer a door. It used to be the airlock,
+## back when the port was on the front; the whole nose was one pane, the pilot
+## looks straight through it, and cutting a door out of that pane in opaque hull
+## put a panel across the middle of the forward view. With the port moved aft
+## the door goes back to being a windshield and the panel is gone.
 
 ## The station this ship is latched to, or null. Kept in step with
 ## DockingEnv's tolerances above -- the training task and the game have to
@@ -606,13 +608,24 @@ func try_dock(station: Station) -> bool:
 ## Open or close both ends of the join together. They are one passage and a
 ## hatch open on one side only is a hole onto vacuum.
 func _set_hatches(open: bool) -> void:
-	if nose_hatch != null:
-		nose_hatch.visible = not open
-		for child in nose_hatch.get_children():
+	# The ship's half of the join is the ramp: closed, it is the aft wall, so
+	# stowing it *is* opening the hatch. Not swung down -- the open angle would
+	# put three metres of ramp through the tunnel floor. A ramp that folds into
+	# the hull when there is a deck on the other side and swings down when there
+	# is only ground is the same door doing the job the situation calls for.
+	if _ramp != null:
+		_ramp.visible = not open
+		for child in _ramp.get_children():
 			if child is CollisionShape3D:
 				(child as CollisionShape3D).set_deferred("disabled", open)
 	if docked_to != null and is_instance_valid(docked_to):
 		docked_to.set_hatch_open(open)
+
+
+## True when the ship's half of the airlock is open, which is to say the ramp
+## is stowed and the aft doorway is a doorway.
+func is_hatch_open() -> bool:
+	return _ramp != null and not _ramp.visible
 
 
 func undock() -> void:
@@ -748,6 +761,11 @@ func apply_light_state() -> void:
 # --- Ramp -------------------------------------------------------------------
 
 func toggle_ramp() -> void:
+	# Docked, the ramp is stowed and the doorway is the airlock. Lowering it
+	# would drive it through the station's tunnel and hand the astronaut a
+	# walkway to nowhere, so the control is simply dead while latched.
+	if docked_to != null:
+		return
 	is_ramp_open = not is_ramp_open
 
 func _process_ramp(delta: float) -> void:

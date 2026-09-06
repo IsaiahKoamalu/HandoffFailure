@@ -720,9 +720,23 @@ would have handed them back to the planet mid-room.
 
 ### The airlock
 
-**The transfer is walked, not faded.** Out of the seat, forward through the
-ship's nose hatch, along the station's tunnel, through the doorway in the fore
-wall and onto the deck — on foot, through the same input path a player uses.
+**The transfer is walked, not faded.** Out of the seat, aft through the ship's
+own doorway, along the station's tunnel, through the doorway in the fore wall
+and onto the deck — on foot, through the same input path a player uses.
+
+**The ship docks stern-first**, because the stern is already the door. The ramp
+is the aft wall of the cabin and the only opening in the hull anyone ever walks
+through, so putting the port there joins the tunnel to the passage that exists
+rather than cutting a second one through the cockpit. Docked, the ramp is
+*stowed* rather than lowered — its open angle would drive three metres of ramp
+through the tunnel floor — and stowing it is the whole of what "the ship's
+hatch is open" means. The nose went back to being a windshield.
+
+The cost is real and worth naming: the ship now backs in, and the pilot cannot
+see the port they are aiming at. `ShipAutopilot._run_dock` reads which way to
+point off `Ship.port_axis` rather than assuming the nose, so the two ends of
+that cannot silently disagree; a human docking by hand is flying blind, which
+is a gameplay problem this has not solved yet.
 
 Three things had to be true for that to work, and each was found by it not
 being:
@@ -736,7 +750,7 @@ being:
   Anywhere else and the join is a step the astronaut has to climb.
 - **The frame volumes have to overlap, generously.** `Astronaut._pick_frame`
   asks the ship first, so an airlock volume reaching back into where a docked
-  ship's nose sits costs nothing. Sizing it for a *perfect* latch does not work:
+  ship's stern sits costs nothing. Sizing it for a *perfect* latch does not work:
   the latch tolerates two units of port-to-port error, so the join sits anywhere
   in a two-unit band. Measured before it was sized for that — a 0.26-unit gap
   where neither hull claimed the astronaut, who walked into it, stopped dead,

@@ -475,9 +475,12 @@ func _run_dock(station: Station) -> void:
 		clampf(_command_thrust.z, -1.0, 1.0),
 	)
 
-	# The ship's port is on its nose, so the nose has to end up pointing back
-	# down the corridor -- along the inward normal. Pitch and yaw do that.
-	var d: Vector3 = _to_local(-normal).normalized()
+	# The turn law aims the ship's nose, which is local -Z. The port is on the
+	# stern, so the nose has to end up pointing back *up* the corridor and the
+	# ship backs in. Reading the sign off port_axis rather than hard-coding it
+	# keeps this from silently inverting if the port ever moves again: a port on
+	# -Z wants the nose at -normal, a port on +Z wants it at +normal.
+	var d: Vector3 = _to_local(normal * signf(_ship.port_axis.z)).normalized()
 	var spin: Vector3 = _to_local(_ship.angular_velocity)
 	# Roll is a separate axis and a separate job: bring the ship's own up onto
 	# the station's. Rolling about local +Z carries +Y toward -X, so a station

@@ -149,6 +149,17 @@ something to avoid. Landing ends when a distance to an analytic surface reaches
 zero; docking ends when two *oriented* faces meet, at a speed and an alignment
 that would survive a latch.
 
+**The port is on the stern**, so the ship backs in. The stern is where the ramp
+is, and the ramp is the only opening in the hull anyone walks through, so the
+tunnel joins the passage that already exists. Two places have to know which end
+the port is on and neither can read it off the observation, which is expressed
+relative to the port and so says nothing about which way the *hull* points: the
+turn law in `ShipAutopilot._run_dock` takes it from `Ship.port_axis`, and
+`evaluate.dock_baseline_controller` mirrors it as `SHIP_PORT_FACING`. Getting it
+wrong aims the ship exactly backwards and measures as a clean 0.0% docked rate
+— which is what the first run after the move reported, and it looks like a
+result rather than a bug.
+
 **Observation** (22 floats, `DockingEnv.build_observation`) — port-to-port
 offset, relative velocity, the port's outward normal, alignment, and the
 corridor decomposition (`axial`, how far in front of the port face; `lateral`,
@@ -167,7 +178,14 @@ arriving at the wrong part of the structure.
 | Controller | Docked | Mean return |
 | --- | --- | --- |
 | no input (assist only) | 0.0% | −226.9 |
-| hand-written baseline | **76.7%** | +59.7 |
+| hand-written baseline | **80.4%** | +64.6 |
+
+The baseline was 76.7% with the port on the nose and is 80.4% with it on the
+stern, over 291 episodes. Binomial noise at that rate and count is about 2.3
+points, so a 3.7-point gap is not evidence the ship docks better backwards; the
+honest reading is that moving the port did not cost anything measurable. The
+no-input row is unchanged and was not re-measured — it is a ship that never
+fires a thruster, and which way it is pointing does not come into it.
 
 The baseline's remaining failures are the spawns that start behind the station;
 it has no route-around, only a push back out in front of the port face.

@@ -154,6 +154,14 @@ DOCK_ROLL_GAIN = 2.0
 # lateral at full authority always, and throttling only the approach, has no
 # such fixed point to sit in.
 DOCK_TIGHT = 0.025
+# Which end of the ship the port is on, as the sign of `Ship.port_axis.z`: -1
+# for the nose, +1 for the stern. It is the stern, because the stern is where
+# the ramp is and the ramp is the only door in the hull. Mirrored here rather
+# than observed because the observation is already expressed relative to the
+# port, so nothing in it says which way the *hull* has to point; get this wrong
+# and the controller aims the ship perfectly backwards, which measures as a
+# clean 0.0% docked rate rather than as anything that looks like a bug.
+SHIP_PORT_FACING = 1.0
 
 
 def dock_baseline_controller(obs: np.ndarray) -> np.ndarray:
@@ -215,10 +223,10 @@ def dock_baseline_controller(obs: np.ndarray) -> np.ndarray:
 
     action[:, 0:3] = np.clip((wanted - velocity) * DOCK_VELOCITY_GAIN, -1.0, 1.0)
 
-    # Point the nose at the port face. The ship's port is on its nose, local
-    # -Z, and it has to end up facing back down the corridor -- so the nose
-    # should point along the *inward* normal, which is -normal.
-    d = -normal
+    # Aim the hull. The turn law below drives the ship's nose, local -Z. The
+    # port is on the stern, so the nose has to end up pointing back *up* the
+    # corridor, away from the station, and the ship backs in.
+    d = normal * SHIP_PORT_FACING
     spin = obs[:, D_SPIN]
     action[:, 3] = np.clip(d[:, 1] * DOCK_TURN_GAIN - spin[:, 0] * DOCK_SPIN_GAIN, -1.0, 1.0)
     action[:, 4] = np.clip(-d[:, 0] * DOCK_TURN_GAIN - spin[:, 1] * DOCK_SPIN_GAIN, -1.0, 1.0)

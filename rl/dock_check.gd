@@ -114,7 +114,7 @@ func _run() -> void:
 
 	# --- The astronaut walks across ------------------------------------------
 	# The transfer is simulated: no teleport, no fade. Out of the seat, forward
-	# through the nose hatch, along the tunnel and into the room, on foot,
+	# through the aft doorway, along the tunnel and into the room, on foot,
 	# through the same input path a player uses.
 	_ship.set_piloted(true)
 	_ship.disembark()
@@ -122,7 +122,7 @@ func _run() -> void:
 	_check("astronaut starts in the ship", _astronaut.get_parent() == _ship,
 		"parent is %s" % _astronaut.get_parent().name)
 	_check("hatches open when docked",
-		not _ship.nose_hatch.visible and not _station.hatch.visible, "")
+		_ship.is_hatch_open() and not _station.hatch.visible, "")
 
 	# Walking there. The frames are watched the whole way: a gap between the
 	# ship's volume and the station's would hand the astronaut to the planet
@@ -182,6 +182,6 @@ func _run() -> void:
 		- _station.constant_linear_velocity).length()
 	await _settle(2)
 	_check("hatches close on release",
-		_ship.nose_hatch.visible and _station.hatch.visible, "")
+		not _ship.is_hatch_open() and _station.hatch.visible, "")
 	_check("undocking inherits the station's motion", inherited < 0.01,
 		"%.4f units/s relative" % inherited)

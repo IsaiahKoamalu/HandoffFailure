@@ -56,6 +56,15 @@ Ordered roughly by how much they would change what we believe, not by effort.
       touched a collision mesh, and is never scored on staying upright after it
       stops.
 
+- [ ] **Docking is blind for a human pilot.** The port is on the stern, so the
+      ship backs in and the pilot is looking the other way. The autopilot does
+      not care; a person does. A rear camera, a port-relative HUD cue, or a
+      free-look that snaps aft would each solve it.
+- [ ] **`ppo.py --task docking --warm-start` would clone the wrong expert.** The
+      warm start calls `baseline_controller` unconditionally, which is the
+      *landing* law reading a 20-float observation. Docking observations are 22
+      floats. Nothing has hit this because docking has never been trained.
+
 ## Physics
 
 - [ ] **A parked ship sits on a knife edge.** Parking needs relative speed under

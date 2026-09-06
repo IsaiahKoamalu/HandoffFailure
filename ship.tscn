@@ -92,7 +92,7 @@ radius = 1.8
 
 [sub_resource type="CapsuleMesh" id="CapsuleMesh_7rpyo"]
 
-[node name="Ship" type="RigidBody3D" unique_id=1341798101 node_paths=PackedStringArray("_camera", "_camera_pivot", "_ground_cast", "_exit_point", "_ramp", "_cockpit", "_cockpit_light_switch", "_cabin_light", "_headlight", "nose_hatch")]
+[node name="Ship" type="RigidBody3D" unique_id=1341798101 node_paths=PackedStringArray("_camera", "_camera_pivot", "_ground_cast", "_exit_point", "_ramp", "_cockpit", "_cockpit_light_switch", "_cabin_light", "_headlight")]
 collision_layer = 2
 collision_mask = 3
 mass = 200.0
@@ -106,7 +106,6 @@ _cockpit = NodePath("Cockpit")
 _cockpit_light_switch = NodePath("LightSwitchCabin")
 _cabin_light = NodePath("LightSwitchCabin/CabinLight")
 _headlight = NodePath("CameraPivot/SpotLight3D")
-nose_hatch = NodePath("NoseHatch")
 
 [node name="Floor" type="MeshInstance3D" parent="." unique_id=1815063688]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, 0)
@@ -232,7 +231,7 @@ far = 20000.0
 spot_range = 60.0
 
 [node name="ExitPoint" type="Marker3D" parent="." unique_id=521702628]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0.6)
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0.9, 0.6)
 
 [node name="GroundCast" type="RayCast3D" parent="." unique_id=56818317]
 collision_mask = 1

@@ -209,13 +209,16 @@ func reset_agent(i: int) -> void:
 		pos += direction * 6.0
 		guard += 1
 
-	# Attitude: roughly facing the port, so most episodes start with a job to
+	# Attitude: roughly presenting the port to the port, so most episodes start
+	# with a job to
 	# finish rather than a job to discover...
 	var toward: Vector3 = (port - pos).normalized()
 	var up: Vector3 = Vector3.UP
 	if absf(toward.dot(up)) > 0.95:
 		up = Vector3.RIGHT
-	var start := Basis.looking_at(toward, up)
+	# looking_at aims -Z, the nose. The port is on the stern, so the useful
+	# starting attitude is the nose aimed *away* from the station.
+	var start := Basis.looking_at(toward * signf(ship.port_axis.z), up)
 	start = start.rotated(start.x, _rng.randf_range(-0.4, 0.4))
 	start = start.rotated(start.y, _rng.randf_range(-0.4, 0.4))
 	# ...and sometimes not facing it at all. A player engaging a docking
