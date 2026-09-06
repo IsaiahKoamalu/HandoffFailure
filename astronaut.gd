@@ -35,6 +35,30 @@ class_name Astronaut
 ## is parked on a planet or under thrust in deep space.
 @export var _cabin_gravity: float = 9.81
 
+@export_category("Life support")
+## Seconds of oxygen in a full pack.
+##
+## Only spent in vacuum. Inside the ship or a station there is air, and an
+## astronaut who suffocates sitting in the cabin is a timer, not a life support
+## system. Running out does not kill -- there is no death in this simulation --
+## it slows the walk and darkens the view, which is a warning you cannot miss
+## and cannot be surprised by.
+@export var oxygen_seconds: float = 300.0
+## How fast the pack refills in breathable air, as a multiple of real time.
+@export_range(0.5, 20.0, 0.5) var oxygen_refill_rate: float = 6.0
+
+@export_category("Jetpack")
+## Thrust in units per second squared, against a 9.81 surface gravity.
+@export var jetpack_thrust: float = 14.0
+## Seconds of continuous burn in a full tank.
+##
+## Short on purpose. It is for crossing the last twenty metres to a ship that
+## drifted, or getting off the ground on a small moon -- not for flying, which
+## is what the ship is for.
+@export var jetpack_seconds: float = 6.0
+## How fast the tank refills while standing on something solid.
+@export_range(0.1, 10.0, 0.1) var jetpack_refill_rate: float = 0.5
+
 @export_category("Swimming")
 ## Upward acceleration underwater as a multiple of local gravity. Above 1.0 and
 ## the astronaut drifts toward the surface; below 1.0 they sink to the seabed.
@@ -46,6 +70,11 @@ class_name Astronaut
 
 var is_active: bool = false
 var is_lamp_on: bool = true
+## Remaining oxygen and jetpack propellant, in seconds.
+var oxygen: float = 0.0
+var jetpack: float = 0.0
+## True while the jets are firing, for the HUD and the exhaust.
+var is_jetting: bool = false
 ## Below sea level on the planet currently being ridden.
 var is_submerged: bool = false
 
@@ -64,6 +93,10 @@ var _camera_x_rotation: float = 0.0
 
 
 func _ready() -> void:
+	# Both tanks start full. An astronaut who steps out of the airlock on an
+	# empty pack has been given a bug, not a challenge.
+	oxygen = oxygen_seconds
+	jetpack = jetpack_seconds
 	set_active(false)
 	_register_terrain.call_deferred()
 
@@ -78,6 +111,7 @@ func _physics_process(delta: float) -> void:
 	_update_frame(_pick_frame())
 	_update_frame_field()
 	up_direction = _up
+	_process_life_support(delta)
 
 	if is_active:
 		_process_look_inputs()
@@ -89,10 +123,13 @@ func _physics_process(delta: float) -> void:
 		# On the ground the astronaut fully controls its frame-relative
 		# velocity, so releasing the keys means riding the frame exactly.
 		velocity = _get_walk_velocity(_up)
+		is_jetting = false
+		jetpack = minf(jetpack_seconds, jetpack + delta * jetpack_refill_rate)
 		if is_active and Input.is_action_just_pressed("jump"):
 			velocity += _up * _jump_speed
 	else:
 		velocity += _gravity * delta
+		_process_jetpack(delta)
 
 	move_and_slide()
 	_mouse_delta = Vector2.ZERO
@@ -146,6 +183,59 @@ func get_interactable() -> Interactable:
 
 ## Switch the helmet lamp. Bound to the toggle_light action rather than an
 ## Interactable: it is carried, not walked up to.
+## Oxygen drains in vacuum and refills in air. What counts as air is having a
+## frame with a hull around it -- the ship's cabin or a station's deck -- which
+## is the same test that decides whose gravity is underfoot, so the two can
+## never disagree about whether you are inside.
+func _process_life_support(delta: float) -> void:
+	if oxygen_seconds <= 0.0:
+		return
+	if has_air():
+		oxygen = minf(oxygen_seconds, oxygen + delta * oxygen_refill_rate)
+	else:
+		oxygen = maxf(0.0, oxygen - delta)
+
+
+## True where there is something to breathe.
+func has_air() -> bool:
+	return _frame_body is Ship or _frame_body is Station
+
+
+func oxygen_fraction() -> float:
+	if oxygen_seconds <= 0.0:
+		return 1.0
+	return clampf(oxygen / oxygen_seconds, 0.0, 1.0)
+
+
+func jetpack_fraction() -> float:
+	if jetpack_seconds <= 0.0:
+		return 0.0
+	return clampf(jetpack / jetpack_seconds, 0.0, 1.0)
+
+
+## The body whose frame the astronaut is riding, for anything that needs to
+## report where "still" is.
+func current_frame() -> Node3D:
+	return _frame_body
+
+
+## Hold jump off the ground to fire the jets.
+##
+## Deliberately the same key as the jump. An astronaut who has left the ground
+## wants to go up, and asking them to remember which of two keys does that
+## while they are drifting away from their ship is a bad time to be teaching
+## a control scheme.
+func _process_jetpack(delta: float) -> void:
+	is_jetting = false
+	if not is_active or jetpack <= 0.0 or jetpack_seconds <= 0.0:
+		return
+	if not Input.is_action_pressed("jump"):
+		return
+	is_jetting = true
+	jetpack = maxf(0.0, jetpack - delta)
+	velocity += _up * jetpack_thrust * delta
+
+
 func toggle_lamp() -> void:
 	is_lamp_on = not is_lamp_on
 	_headlamp.visible = is_lamp_on
@@ -308,7 +398,21 @@ func _get_walk_velocity(up: Vector3) -> Vector3:
 	wish -= wish.project(up)
 	if wish.is_zero_approx():
 		return Vector3.ZERO
-	return wish.normalized() * _walk_speed
+	return wish.normalized() * _walk_speed * _exertion()
+
+
+## How much of full effort is available. Falls off as the pack empties and
+## bottoms out at a third, which is the whole penalty for running out of air.
+##
+## Not death. Nothing in this simulation kills you, and a suffocation timer that
+## did would turn every walk into a countdown -- the point of the pack is that
+## wandering too far from the ship should be a decision with a cost, not a
+## failure state. Slowing to a crawl a long way from the airlock is that cost,
+## and it is legible from the gauge before it bites.
+func _exertion() -> float:
+	if oxygen_seconds <= 0.0:
+		return 1.0
+	return lerpf(0.33, 1.0, smoothstep(0.0, 0.18, oxygen_fraction()))
 
 
 func _process_look_inputs() -> void:

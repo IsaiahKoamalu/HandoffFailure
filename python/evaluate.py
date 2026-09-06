@@ -164,6 +164,24 @@ DOCK_TIGHT = 0.025
 SHIP_PORT_FACING = 1.0
 
 
+# Below this, an observation channel counts as constant and is left at unit
+# scale instead of being divided by its own standard deviation.
+#
+# Not an epsilon guarding a divide by zero -- it is a decision about what counts
+# as constant. A channel whose standard deviation over a whole training run is a
+# thousandth of its own range never varied, and dividing by it turns a rounding
+# difference into an enormous input. Measured: the shipped landing policy has
+# obs_std[19] = 1.0e-4 on the fuel channel, having trained with unlimited tanks
+# where the value was always exactly 1.0. Giving the player's ship a fuel budget
+# then fed it 0.985, which divided out to -147 against inputs that otherwise
+# live in [-3, 3], and the ship stopped being able to land.
+#
+# Lives here rather than in ppo because ppo imports from this module and the
+# other way round is a circular import. NeuralPilot carries the same number and
+# verify_pilot compares the two paths.
+CONSTANT_STD = 1e-3
+
+
 def dock_baseline_controller(obs: np.ndarray) -> np.ndarray:
     """Fly to the corridor, line up on it, then close.
 
@@ -355,7 +373,13 @@ class PolicyController:
         self.trained_steps = data.get("trained_steps", 0)
 
     def __call__(self, obs: np.ndarray) -> np.ndarray:
-        x = np.clip((obs - self.mean) / np.maximum(self.std, 1e-6), -10.0, 10.0)
+        # A channel that never moved during training is unit scale, not
+        # something to divide by. Same rule and same constant as ppo.Normaliser
+        # and NeuralPilot; verify_pilot compares this path against that one and
+        # will say so if the three ever disagree -- it did, when only two of
+        # them had been changed.
+        scale = np.where(self.std < CONSTANT_STD, 1.0, self.std)
+        x = np.clip((obs - self.mean) / scale, -10.0, 10.0)
         for index, (weight, bias) in enumerate(self.layers):
             x = x @ weight.T + bias
             if index < len(self.layers) - 1:

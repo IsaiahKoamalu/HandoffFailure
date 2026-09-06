@@ -65,6 +65,25 @@ Ordered roughly by how much they would change what we believe, not by effort.
       *landing* law reading a 20-float observation. Docking observations are 22
       floats. Nothing has hit this because docking has never been trained.
 
+- [ ] **Scattered boulders have no collision.** They are sized to knee height so
+      that walking through them does not read as a bug, which is a workaround
+      rather than a fix. A single convex shape per instance on the few nearest
+      the client would cover it without paying for several hundred.
+- [ ] **Nothing on a planet is worth flying to.** The worlds now look different
+      from each other and have ground worth standing on, but there is no reason
+      to pick one landing site over another -- no wrecks, outposts, beacons or
+      anomalies. Surface sites the navigation panel could target are the
+      cheapest thing that would turn scenery into somewhere to go.
+- [ ] **The ship's fuel budget is enabled and there is exactly one place to
+      refill it.** 900 seconds is generous and the station tops it up, but a
+      pilot who runs dry on the far side of Thule has no recourse at all. Either
+      a second station, a surface depot, or a slow ambient regeneration.
+- [ ] **The shipped policy has never seen fuel vary.** It trains with unlimited
+      tanks, so observation 19 is constant at 1.0 for the whole run and the
+      normaliser's standard deviation for it is a floor. `CONSTANT_STD` stops
+      that from exploding, but the honest fix is to train with a fuel budget so
+      the channel means something. See the note in `rl/README.md`.
+
 ## Physics
 
 - [ ] **A parked ship sits on a knife edge.** Parking needs relative speed under

@@ -143,7 +143,13 @@ class_name Planet
 @export var scatter_enabled: bool = false
 @export_range(0, 2000, 10) var scatter_count: int = 420
 ## Boulder size in world units, smallest to largest.
-@export var scatter_size: Vector2 = Vector2(0.5, 2.6)
+##
+## Kept to roughly knee height. These have no collision -- several hundred
+## concave shapes per client is not a cost worth paying for scenery -- and a
+## rock you can see over is one you do not expect to stop you. Sized waist-high
+## and up they read as obstacles, and walking through an obstacle looks broken
+## in a way walking over rubble does not.
+@export var scatter_size: Vector2 = Vector2(0.3, 1.2)
 ## Tint. Left black, the rock colour is used, which is usually what is wanted.
 @export var scatter_color: Color = Color(0, 0, 0, 0)
 ## Steepest ground that still collects loose rock, as a slope dot product.

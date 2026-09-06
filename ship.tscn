@@ -123,9 +123,9 @@ size = Vector3(0.2, 2.4, 5.2)
 
 [sub_resource type="StandardMaterial3D" id="Mat_glass"]
 transparency = 1
-albedo_color = Color(0.45, 0.62, 0.72, 0.25)
-metallic = 0.6
-roughness = 0.1
+albedo_color = Color(0.45, 0.62, 0.72, 0.22)
+metallic = 0.15
+roughness = 0.35
 
 [sub_resource type="BoxMesh" id="Mesh_glass"]
 material = SubResource("Mat_glass")
@@ -143,9 +143,9 @@ size = Vector3(0.7, 2, 0.2)
 
 [sub_resource type="StandardMaterial3D" id="Mat_hatch"]
 transparency = 1
-albedo_color = Color(0.4, 0.55, 0.6, 0.34)
-metallic = 0.6
-roughness = 0.15
+albedo_color = Color(0.4, 0.55, 0.6, 0.3)
+metallic = 0.15
+roughness = 0.38
 
 [sub_resource type="BoxMesh" id="Mesh_hatch"]
 material = SubResource("Mat_hatch")
@@ -367,6 +367,7 @@ near = 0.1
 far = 20000.0
 
 [node name="SpotLight3D" type="SpotLight3D" parent="CameraPivot" unique_id=2003650267]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1.1, -1.2)
 spot_range = 60.0
 
 [node name="ExitPoint" type="Marker3D" parent="." unique_id=521702628]

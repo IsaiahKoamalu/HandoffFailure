@@ -42,6 +42,9 @@ class_name Station
 @export var port_axis: Vector3 = Vector3(0.0, 0.0, -1.0)
 ## How far out along the normal the approach corridor begins.
 @export var approach_range: float = 60.0
+## Seconds of ship fuel replaced per second while docked. A station that only
+## joins two airlocks is scenery; this is the reason to fly back to one.
+@export_range(0.0, 200.0, 1.0) var refuel_rate: float = 30.0
 ## Half-extents of the hull, in the station's own frame. Kept here rather than
 ## read off the mesh so a controller can ask the station how big it is without
 ## walking the scene, and so the box the physics uses and the box the reward

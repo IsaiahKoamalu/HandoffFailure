@@ -660,6 +660,13 @@ func _set_hatches(open: bool) -> void:
 		docked_to.set_hatch_open(open)
 
 
+## True when the ship is pinned to a surface rather than resting on it. The
+## distinction matters to a pilot: a parked ship stays where it was put and an
+## unparked one on a slope creeps.
+func is_parked() -> bool:
+	return _is_parked
+
+
 ## True when the ship's half of the airlock is open, which is to say the ramp
 ## is stowed and the aft doorway is a doorway.
 func is_hatch_open() -> bool:
@@ -691,6 +698,13 @@ func _process_docking(movement: Vector3, delta: float) -> void:
 	if movement != Vector3.ZERO:
 		undock()
 		return
+	# Latched to a station is where the tanks are filled. Over time rather than
+	# at once, so the gauge shows it happening and a pilot who undocks early
+	# leaves with what they waited for.
+	if has_fuel_limit and docked_to.refuel_rate > 0.0:
+		fuel = minf(fuel_seconds, fuel + docked_to.refuel_rate * delta)
+		is_out_of_fuel = fuel <= 0.0
+
 	if _dock_capture < 1.0:
 		_dock_capture = minf(
 			1.0, _dock_capture + delta / maxf(dock_capture_seconds, 0.001))

@@ -28,6 +28,10 @@ var task: String = "landing"
 var obs_size: int = 0
 ## Physics ticks each action was held for in training; the autopilot matches it.
 var repeat: int = 1
+
+## Below this, an observation channel counts as constant. Must match
+## python/ppo.py.
+const CONSTANT_STD: float = 1e-3
 var act_size: int = 0
 var trained_steps: int = 0
 
@@ -97,9 +101,19 @@ func _adopt(data: Dictionary) -> bool:
 	var deviations := PackedFloat32Array(data.get("obs_std", []))
 	_inverse_std.resize(deviations.size())
 	for i in deviations.size():
-		# A constant observation channel has zero variance and would divide by
-		# nothing. Treating it as unit scale leaves it at whatever offset it has.
-		_inverse_std[i] = 1.0 / deviations[i] if deviations[i] > 1e-6 else 1.0
+		# A channel that never moved is treated as unit scale rather than as
+		# something to divide by. CONSTANT_STD is not an epsilon guarding a
+		# divide by zero: it is a decision about what counts as constant, and it
+		# has to match python/ppo.py's, which verify_pilot checks.
+		#
+		# A standard deviation a thousandth of a channel's own range means it
+		# never varied. Measured: this policy's fuel channel has obs_std 1.0e-4,
+		# because it trained with unlimited tanks and always saw exactly 1.0.
+		# Giving the player ship a fuel budget fed it 0.985, which divided out
+		# to -147 against inputs that otherwise live in [-3, 3]. The clamp below
+		# caught it at -10, which is still a value that channel never once saw,
+		# and the ship stopped being able to land.
+		_inverse_std[i] = 1.0 / deviations[i] if deviations[i] > CONSTANT_STD else 1.0
 	if _mean.size() != obs_size or _inverse_std.size() != obs_size:
 		push_warning("NeuralPilot: normalisation statistics do not match obs_size")
 		return false

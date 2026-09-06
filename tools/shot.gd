@@ -29,6 +29,7 @@ var _hide: PackedStringArray = PackedStringArray()
 
 var _world: Node
 var _camera: Camera3D
+var _astronaut: Astronaut
 
 
 func _ready() -> void:
@@ -45,9 +46,10 @@ func _ready() -> void:
 
 	_world = load(MAIN_SCENE).instantiate()
 	add_child(_world)
+	_astronaut = _world.get_node("Astronaut")
 
 	# The HUD is the subject of its own shots and clutter in every other one.
-	if _shot != "hud":
+	if _shot != "hud" and _shot != "eva":
 		var hud: Node = _world.get_node_or_null("HUD")
 		if hud != null:
 			_world.remove_child(hud)
@@ -174,7 +176,7 @@ func _run() -> void:
 			# The whole system from above and outside, for scale and orbits.
 			_look(sun.global_position + Vector3(2600.0, 2400.0, 2600.0),
 				sun.global_position)
-		"ship", "station", "cockpit", "hud":
+		"ship", "station", "cockpit", "hud", "eva":
 			await _stage_hardware(planet)
 		_:
 			push_error("unknown shot '%s'" % _shot)
@@ -227,6 +229,27 @@ func _stage_hardware(planet: Planet) -> void:
 				* Vector3(0.9, 0.42, -1.25).normalized() * reach * 1.7,
 				station.global_position + station.global_basis
 					* Vector3(0.0, -1.0, -4.0))
+		"eva":
+			# On the ground, on foot, with the ship behind: the EVA half of the
+			# HUD only exists while the astronaut is the one being flown.
+			var dir3: Vector3 = _land_direction(planet)
+			var ground3: float = planet.get_surface_radius_at(dir3)
+			var up3: Vector3 = (planet.global_basis * dir3).normalized()
+			var along3: Vector3 = up3.cross(Vector3.UP).normalized()
+			var stand := Transform3D(Basis.looking_at(along3, up3),
+				planet.to_global(dir3 * (ground3 + 3.0)))
+			ship.global_transform = stand
+			ship.linear_velocity = planet.get_orbital_velocity(stand.origin)
+			ship.freeze = true
+			ship.set_piloted(false)
+			# Placed on the ground beside the ship rather than disembarked:
+			# disembark puts the astronaut in the cabin, and the EVA panel is
+			# about being outside it.
+			var beside: Vector3 = stand.origin + up3 * 1.2 				+ along3.cross(up3) * 5.0
+			_astronaut.place_at(Transform3D(
+				Basis.looking_at(-along3.cross(up3), up3), beside))
+			_astronaut.set_active(true)
+			_camera.current = false
 		"cockpit", "hud":
 			var out: Vector3 = Vector3(0.0, 0.3, 1.0).normalized()
 			var here: Vector3 = planet.global_position + out * planet.surface_radius * 2.2

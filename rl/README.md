@@ -338,6 +338,31 @@ that actually decide a touchdown would be swamped.
 
 ## Things that were true and inconvenient
 
+**A constant observation channel is a landmine.** The shipped landing policy
+trained with unlimited fuel, so observation 19 was exactly 1.0 in every sample
+it ever saw and its normaliser recorded `obs_std[19] = 1.0e-4` — a floor, not a
+spread. Giving the player's ship a fuel budget then fed that channel 0.985, and
+
+    (0.985 - 1.0) / 1.0e-4  =  -147
+
+went into a network whose every other input lives in [-3, 3]. The ship still had
+886 of its 900 seconds left; it simply stopped being able to land, and every
+`autoland_check` attempt ran to the tick limit with the tanks nearly full.
+
+The clamp to ±10 that `NeuralPilot` already applied did not save it. -10 is
+still a value that channel had never once seen, and the policy was no better for
+receiving it. The fix is upstream of the clamp: a channel whose standard
+deviation over a whole training run is a thousandth of its own range never
+varied, so it is left at unit scale rather than divided by. `CONSTANT_STD`,
+1e-3, lives in `evaluate.py` and is mirrored in `NeuralPilot`; `verify_pilot`
+compares the two and duly failed while only one of them had been changed.
+
+Worth stating plainly, because it generalises: **every observation an agent is
+trained against must vary during training, or it is not an input, it is a
+constant with a divisor attached.** The obvious version of this bug is a policy
+that ignores a channel. The real one is a policy that explodes when the channel
+finally moves.
+
 **The time limit was setting the score.** `max_steps` was 9,000 ticks — 150
 seconds. Tripling it took the hand-written controller from **92.5% to 99.0%**
 and its timeouts from 6.5% to zero. Every one of those thirteen episodes became

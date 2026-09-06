@@ -31,7 +31,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from evaluate import baseline_controller
+from evaluate import CONSTANT_STD, baseline_controller
 from godot_env import ACT_SIZE, RUNNING, GodotVecEnv
 
 
@@ -57,7 +57,23 @@ class RunningNorm:
         self.count = total
 
     def __call__(self, obs: np.ndarray) -> np.ndarray:
-        return np.clip((obs - self.mean) / np.sqrt(self.var + 1e-8), -10.0, 10.0).astype(np.float32)
+        return np.clip((obs - self.mean) / self.scale(), -10.0, 10.0).astype(np.float32)
+
+    # Per-channel divisor, with a floor that treats a channel which never moved
+    # as unit scale rather than as something to divide by.
+    #
+    # CONSTANT_STD is not an epsilon guarding a divide by zero -- 1e-8 already
+    # does that. It is a decision about what counts as constant. A channel whose
+    # standard deviation over an entire training run is a thousandth of its own
+    # range never varied, and dividing by that turns a rounding difference into
+    # an input of a hundred and fifty. Measured: the shipped landing policy has
+    # obs_std[19] = 1.0e-4 on the fuel channel, because it was trained with
+    # unlimited tanks and the value was always exactly 1.0. Giving the player
+    # ship a fuel budget then fed it 0.985, which normalised to -147 against
+    # inputs that otherwise live in [-3, 3], and the policy stopped landing.
+    def scale(self) -> np.ndarray:
+        deviation = np.sqrt(self.var + 1e-8)
+        return np.where(deviation < CONSTANT_STD, 1.0, deviation)
 
 
 class ValueNorm:

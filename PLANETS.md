@@ -562,12 +562,25 @@ and both light states all restored, and every planet back where it was.
 
 ## The current system
 
-| body | radius | orbit | character | walk lap |
+| node | name | radius | orbit | character |
 |---|---|---|---|---|
-| Sun | 200 | — | star, no terrain | — |
-| Planet1 | 180 | 1200 | temperate, rolling, real oceans | 226 s |
-| Planet2 | 260 | 2400 | dry alpine, sharp ranges, little water | 327 s |
-| Planet3 | 140 | 3600 | archipelago, many islands, deep water | 176 s |
+| Sun | — | 200 | — | star, no terrain |
+| Planet1 | Kestrel | 180 | 1200 | temperate, rolling, real oceans, weather |
+| Planet4 | Ember | 120 | 700 | volcanic, lava in the basins, no sea |
+| Planet2 | Ferrum | 260 | 2400 | rust desert, sharp ranges, no sea at all |
+| Planet3 | Thule | 140 | 3600 | ice, frozen shallow seas, heavy overcast |
+| Moon1 | Lys | 52 | 600 of Kestrel | airless grey rock, tidally locked |
+
+Node names are not display names. `display_name` carries what the HUD shows,
+because the node names are NodePaths in three other places and keys in the save
+file, and nobody is flying to "Planet2".
+
+**Kestrel's height field is load-bearing and is not a free parameter.** The
+landing task is scored against that ground and the shipped policy was trained
+on it. Raising its ridge weight and detail frequency for the look of the thing
+took `autoland_check` from 12/12 to 10/12, both failures ditching in water on
+near-antipodal approaches. Ruggedness belongs on the four worlds nothing is
+scored against; `shore_easing` is per-planet for exactly this reason.
 
 Sphere-of-influence separations all clear their combined capture radii, the
 tightest being Planet1↔Planet2 at 1200 against a required 880.
@@ -586,6 +599,85 @@ Two things that scaling breaks and are easy to forget:
 - **Camera `far`** defaults to 4000. With the outer planet at 3600 plus the
   ship's own distance from origin, distant bodies clipped out entirely. Both
   cameras are now `near = 0.1`, `far = 20000`.
+
+## Appearance
+
+Four shells and a shader, none of which touch the height field:
+
+- **Terrain shader** (`shaders/terrain.gdshader`). The mesh carries a
+  hypsometric colour per vertex and no UVs, which reads from orbit and turns
+  into a painted dome close up. Triplanar detail noise gives it texture at
+  metres, a slope term puts bare rock on anything too steep to hold soil, and
+  the shading normal is bumped by the screen-space gradient of the noise —
+  free, because the GPU already computes those derivatives to pick a mip level,
+  and it fades out with distance on its own.
+
+  Both noise modulations are **biased to darken**. A symmetric one centred on
+  1.0 brightens as often as it darkens, and two stacked take a pale albedo past
+  1.0 into clipped white. That, plus a colour ramp whose shore band was wide
+  enough to paint continental interiors in beach sand, is what bleached the
+  temperate world in the first pass.
+
+- **Atmosphere** (`shaders/atmosphere.gdshader`). An additive shell a few per
+  cent larger than the planet. `cull_back`, not `cull_disabled`: with both faces
+  drawn the near one is in front of the terrain and adds over the disc while the
+  far one is behind it and depth-rejected, so the halo doubles in exactly the
+  ring outside the silhouette and the seam between one layer and two draws a
+  hard circle around the world.
+
+- **Clouds** (`shaders/clouds.gdshader`). A second shell thresholded out of
+  noise — cut out rather than painted, so there is clear sky between the
+  systems — drifting against the ground so weather is not stuck to the terrain.
+  Alpha is faded where the shell goes edge-on, or the limb draws a ring of dirt.
+
+- **Ocean** (`shaders/ocean.gdshader`). Water is sold by two angle-dependent
+  terms: mirror-like at grazing angles, its own colour looking straight down.
+  A flat translucent sphere has neither and reads as coloured glass.
+
+- **Hull** (`shaders/hull.gdshader`). Panel seams in object space for the ship
+  and station, both of which are untextured boxes. A box with one flat albedo
+  has no size; seams give it a unit to be counted in. Note that a trim strip at
+  a fixed object-space Y lights an *entire face* of a box, since a box face has
+  exactly one Y — it works on a wall whose Y spans its height and lights a ramp
+  like a lightbox.
+
+### Surface scatter
+
+Boulders streamed on the same patch the collision uses, rebuilt when it
+recentres. The terrain mesh cannot carry a feature smaller than its vertex
+spacing — several metres on Kestrel — so without these there is nothing on the
+ground to judge height, speed or scale against.
+
+Placed on a jittered grid rather than at free random points, which clump into
+piles, and positioned by a hash of their own grid cell rather than from a random
+sequence: walk away and come back and the same rocks are in the same places,
+instead of the landscape reshuffling behind you. Sampling stops short of the
+patch edge, because a boulder past it stands on ground with no collision.
+
+They have **no collision**, which is why they are sized to about knee height. A
+rock you can see over is one you do not expect to stop you; sized waist-high and
+up they read as obstacles, and walking through an obstacle looks broken.
+
+## Life support and the jetpack
+
+The astronaut carries oxygen and a small jetpack. Both refill in air, and what
+counts as air is having a frame with a hull around it — the ship's cabin or a
+station's deck — which is the same test that decides whose gravity is underfoot,
+so the two can never disagree about whether you are inside.
+
+Running out of oxygen does not kill. Nothing here does, and a suffocation timer
+would turn every walk into a countdown; the point of the pack is that wandering
+too far from the ship is a decision with a cost. The cost is exertion falling to
+a third, which is legible on the gauge long before it bites.
+
+The jetpack is the jump key held off the ground, deliberately — an astronaut
+drifting away from their ship is a bad moment to be teaching a second control.
+Six seconds of burn: enough to cross the last twenty metres to a ship that
+drifted, or to get off a small moon, and not enough to fly.
+
+The ship now carries a fuel budget (900 s) and a docked station refills it at
+`refuel_rate` seconds per second. That is the reason to fly back to one — a
+station that only joins two airlocks is scenery.
 
 ## Verification
 
