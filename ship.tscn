@@ -2,11 +2,35 @@
 
 [ext_resource type="Script" uid="uid://bj432qficp2xb" path="res://ship.gd" id="1_ship"]
 [ext_resource type="Script" path="res://interactable.gd" id="2_inter"]
+[ext_resource type="Shader" path="res://shaders/hull.gdshader" id="9_hull"]
 
-[sub_resource type="StandardMaterial3D" id="Mat_hull"]
-albedo_color = Color(0.42, 0.45, 0.5, 1)
-metallic = 0.4
-roughness = 0.6
+[sub_resource type="ShaderMaterial" id="Mat_hull"]
+shader = ExtResource("9_hull")
+shader_parameter/hull_color = Color(0.4, 0.43, 0.48, 1)
+shader_parameter/metallic_amount = 0.55
+shader_parameter/roughness_amount = 0.52
+shader_parameter/panel_size = 0.8
+shader_parameter/seam_width = 0.026
+shader_parameter/seam_depth = 0.45
+shader_parameter/panel_variation = 0.07
+shader_parameter/trim_color = Color(0.35, 0.72, 1.0, 1)
+shader_parameter/trim_strength = 0.0
+shader_parameter/trim_height = 0.0
+shader_parameter/trim_thickness = 0.06
+
+[sub_resource type="ShaderMaterial" id="Mat_ramp_panel"]
+shader = ExtResource("9_hull")
+shader_parameter/hull_color = Color(0.26, 0.28, 0.32, 1)
+shader_parameter/metallic_amount = 0.45
+shader_parameter/roughness_amount = 0.68
+shader_parameter/panel_size = 0.55
+shader_parameter/seam_width = 0.03
+shader_parameter/seam_depth = 0.5
+shader_parameter/panel_variation = 0.05
+shader_parameter/trim_color = Color(1.0, 0.72, 0.25, 1)
+shader_parameter/trim_strength = 0.0
+shader_parameter/trim_height = 0.0
+shader_parameter/trim_thickness = 0.05
 
 [sub_resource type="BoxMesh" id="Mesh_deck"]
 material = SubResource("Mat_hull")
@@ -21,6 +45,74 @@ size = Vector3(3.2, 0.2, 5.3)
 
 [sub_resource type="BoxShape3D" id="Shape_floor"]
 size = Vector3(3.2, 0.2, 5.3)
+
+[sub_resource type="ShaderMaterial" id="Mat_hull_lit"]
+shader = ExtResource("9_hull")
+shader_parameter/hull_color = Color(0.4, 0.43, 0.48, 1)
+shader_parameter/metallic_amount = 0.55
+shader_parameter/roughness_amount = 0.52
+shader_parameter/panel_size = 0.8
+shader_parameter/seam_width = 0.026
+shader_parameter/seam_depth = 0.45
+shader_parameter/panel_variation = 0.07
+shader_parameter/trim_color = Color(0.4, 0.78, 1.0, 1)
+shader_parameter/trim_strength = 0.9
+shader_parameter/trim_height = -0.85
+shader_parameter/trim_thickness = 0.045
+
+[sub_resource type="StandardMaterial3D" id="Mat_nozzle"]
+albedo_color = Color(0.16, 0.16, 0.18, 1)
+metallic = 0.7
+roughness = 0.45
+
+[sub_resource type="StandardMaterial3D" id="Mat_nozzle_throat"]
+albedo_color = Color(0.5, 0.25, 0.12, 1)
+emission_enabled = true
+emission = Color(1.0, 0.45, 0.15, 1)
+emission_energy_multiplier = 1.6
+roughness = 0.9
+
+[sub_resource type="StandardMaterial3D" id="Mat_nav_port"]
+albedo_color = Color(0.5, 0.05, 0.05, 1)
+emission_enabled = true
+emission = Color(1.0, 0.1, 0.1, 1)
+emission_energy_multiplier = 4.0
+
+[sub_resource type="StandardMaterial3D" id="Mat_nav_starboard"]
+albedo_color = Color(0.05, 0.5, 0.12, 1)
+emission_enabled = true
+emission = Color(0.1, 1.0, 0.25, 1)
+emission_energy_multiplier = 4.0
+
+[sub_resource type="CylinderMesh" id="Mesh_nozzle"]
+material = SubResource("Mat_nozzle")
+top_radius = 0.42
+bottom_radius = 0.28
+height = 0.9
+radial_segments = 12
+rings = 1
+
+[sub_resource type="CylinderMesh" id="Mesh_throat"]
+material = SubResource("Mat_nozzle_throat")
+top_radius = 0.34
+bottom_radius = 0.34
+height = 0.08
+radial_segments = 12
+rings = 1
+
+[sub_resource type="BoxMesh" id="Mesh_spine"]
+material = SubResource("Mat_hull")
+size = Vector3(0.5, 0.35, 4.2)
+
+[sub_resource type="BoxMesh" id="Mesh_fin"]
+material = SubResource("Mat_hull")
+size = Vector3(0.12, 1.1, 1.6)
+
+[sub_resource type="SphereMesh" id="Mesh_navlight"]
+radius = 0.09
+height = 0.18
+radial_segments = 8
+rings = 4
 
 [sub_resource type="BoxMesh" id="Mesh_wall"]
 material = SubResource("Mat_hull")
@@ -62,13 +154,13 @@ size = Vector3(1.8, 2, 0.2)
 [sub_resource type="BoxShape3D" id="Shape_hatch"]
 size = Vector3(1.8, 2, 0.2)
 
-[sub_resource type="StandardMaterial3D" id="Mat_ramp"]
+[sub_resource type="StandardMaterial3D" id="Mat_ramp_unused"]
 albedo_color = Color(0.28, 0.3, 0.34, 1)
 metallic = 0.4
 roughness = 0.7
 
 [sub_resource type="BoxMesh" id="Mesh_strut"]
-material = SubResource("Mat_ramp")
+material = SubResource("Mat_ramp_panel")
 size = Vector3(0.2, 1.2, 0.2)
 
 [sub_resource type="BoxShape3D" id="Shape_strut"]
@@ -83,7 +175,7 @@ material = SubResource("Mat_seat")
 size = Vector3(0.7, 0.9, 0.7)
 
 [sub_resource type="BoxMesh" id="Mesh_ramp"]
-material = SubResource("Mat_ramp")
+material = SubResource("Mat_ramp_panel")
 size = Vector3(3, 0.15, 3.2)
 
 [sub_resource type="BoxShape3D" id="Shape_ramp"]
@@ -133,6 +225,7 @@ shape = SubResource("Shape_deck")
 [node name="WallLeft" type="MeshInstance3D" parent="." unique_id=565286274]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.6, 1.2, 0)
 mesh = SubResource("Mesh_wall")
+material_override = SubResource("Mat_hull_lit")
 
 [node name="WallLeftShape" type="CollisionShape3D" parent="." unique_id=764897072]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.6, 1.2, 0)
@@ -141,6 +234,7 @@ shape = SubResource("Shape_wall")
 [node name="WallRight" type="MeshInstance3D" parent="." unique_id=1616751387]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.6, 1.2, 0)
 mesh = SubResource("Mesh_wall")
+material_override = SubResource("Mat_hull_lit")
 
 [node name="WallRightShape" type="CollisionShape3D" parent="." unique_id=1582191982]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.6, 1.2, 0)
@@ -212,6 +306,44 @@ shape = SubResource("Shape_strut")
 [node name="Seat" type="MeshInstance3D" parent="." unique_id=765964177]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.45, -1.9)
 mesh = SubResource("Mesh_seat")
+
+[node name="EnginePodLeft" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, -1.75, 0.8, 2.0)
+mesh = SubResource("Mesh_nozzle")
+
+[node name="EnginePodRight" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 1.75, 0.8, 2.0)
+mesh = SubResource("Mesh_nozzle")
+
+[node name="EngineThroatLeft" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, -1.75, 0.8, 2.42)
+mesh = SubResource("Mesh_throat")
+
+[node name="EngineThroatRight" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 1.75, 0.8, 2.42)
+mesh = SubResource("Mesh_throat")
+
+[node name="Spine" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.7, 0.2)
+mesh = SubResource("Mesh_spine")
+
+[node name="FinLeft" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.62, 2.5, 1.9)
+mesh = SubResource("Mesh_fin")
+
+[node name="FinRight" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.62, 2.5, 1.9)
+mesh = SubResource("Mesh_fin")
+
+[node name="NavLightPort" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.72, 1.9, -1.4)
+mesh = SubResource("Mesh_navlight")
+material_override = SubResource("Mat_nav_port")
+
+[node name="NavLightStarboard" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.72, 1.9, -1.4)
+mesh = SubResource("Mesh_navlight")
+material_override = SubResource("Mat_nav_starboard")
 
 [node name="Ramp" type="AnimatableBody3D" parent="." unique_id=286105755]
 collision_layer = 8

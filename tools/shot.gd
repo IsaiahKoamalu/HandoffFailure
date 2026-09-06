@@ -213,11 +213,20 @@ func _stage_hardware(planet: Planet) -> void:
 			# against world up comes out rolled by however far the site is from
 			# the pole, and a horizon running down the side of the frame reads
 			# as a shot from orbit rather than as one from the ground.
-			_look(place.origin + up * 2.4 - along * 8.0
-				+ along.cross(up) * 6.0, place.origin + up * 0.8, up)
+			# Three-quarter front: the nose, one flank and the ground it is
+			# standing on. `along` is where the ship is pointing, so this is in
+			# front of it rather than behind, which is what the first version
+			# framed and it showed a slab and a ramp.
+			_look(place.origin + up * 3.0 + along * 9.0
+				+ along.cross(up) * 7.0, place.origin + up * 1.0, up)
 		"station":
+			# Framed off the station's own extents rather than a fixed offset,
+			# so the shot stays composed if the structure is ever resized.
+			var reach: float = station.hull_extents.length()
 			_look(station.global_position + station.global_basis
-				* Vector3(26.0, 12.0, -34.0), station.global_position)
+				* Vector3(0.9, 0.42, -1.25).normalized() * reach * 1.7,
+				station.global_position + station.global_basis
+					* Vector3(0.0, -1.0, -4.0))
 		"cockpit", "hud":
 			var out: Vector3 = Vector3(0.0, 0.3, 1.0).normalized()
 			var here: Vector3 = planet.global_position + out * planet.surface_radius * 2.2
@@ -243,6 +252,9 @@ func _report(planet: Planet) -> void:
 	var current: Camera3D = get_viewport().get_camera_3d()
 	print("rendering from %s" % ("the shot camera" if current == _camera
 		else ("'%s'" % current.name if current != null else "NO CAMERA")))
+	for station in SolarSystem.Instance.Stations:
+		print("station %s %.1f from camera" % [
+			station.name, station.global_position.distance_to(camera)])
 	var ship: Ship = _world.get_node_or_null("Ship")
 	if ship != null:
 		print("ship   %.1f from camera, %.1f above ground" % [

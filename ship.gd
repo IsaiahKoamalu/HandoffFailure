@@ -410,7 +410,10 @@ func _build_thrusters() -> void:
 	flame_material.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
 	flame.material = flame_material
 
-	for offset in [Vector3(-0.9, 0.15, 2.55), Vector3(0.9, 0.15, 2.55)]:
+	# At the mouths of the engine pods, which are outboard of the ramp. The
+	# stern is the door, so anything mounted on the centreline fires through
+	# it -- the plumes used to, and there is now a nozzle to come out of.
+	for offset in [Vector3(-1.75, 0.8, 2.5), Vector3(1.75, 0.8, 2.5)]:
 		var jet := GPUParticles3D.new()
 		jet.name = "Thruster"
 		jet.position = offset
@@ -426,7 +429,7 @@ func _build_thrusters() -> void:
 
 	_exhaust_glow = OmniLight3D.new()
 	_exhaust_glow.name = "ExhaustGlow"
-	_exhaust_glow.position = Vector3(0.0, 0.15, 2.7)
+	_exhaust_glow.position = Vector3(0.0, 0.8, 2.7)
 	_exhaust_glow.light_color = Color(0.5, 0.7, 1.0)
 	_exhaust_glow.omni_range = 8.0
 	_exhaust_glow.light_energy = 0.0
