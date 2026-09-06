@@ -128,12 +128,16 @@ sky_material = SubResource("PanoramaSkyMaterial_lquwl")
 resource_local_to_scene = true
 background_mode = 2
 sky = SubResource("Sky_7mycd")
-ambient_light_source = 1
+ambient_light_source = 2
+ambient_light_color = Color(0.14, 0.17, 0.26, 1)
+ambient_light_energy = 0.14
 reflected_light_source = 1
 glow_enabled = true
 glow_intensity = 1.16
 glow_strength = 0.76
 glow_bloom = 0.48
+tonemap_mode = 3
+tonemap_white = 3.0
 
 [node name="Main" type="Node3D" unique_id=241715004]
 script = ExtResource("1_1bvp3")
@@ -147,8 +151,9 @@ _surface_gravity = 20.0
 mesh = SubResource("SphereMesh_h2yge")
 
 [node name="OmniLight3D" type="OmniLight3D" parent="Sun" unique_id=1121851015]
-light_energy = 0.247
-omni_range = 6000.0
+light_energy = 0.8
+light_specular = 0.9
+omni_range = 9000.0
 omni_attenuation = 0.061
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Sun" unique_id=2018360347]
@@ -157,6 +162,7 @@ shape = SubResource("SphereShape3D_1bvp3")
 [node name="Planet1" type="StaticBody3D" parent="." unique_id=2086609753 node_paths=PackedStringArray("_orbital_parent")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 244.606)
 script = ExtResource("2_h2yge")
+display_name = "Kestrel"
 _orbital_parent = NodePath("../Sun")
 _orbital_radius = 1200.0
 _orbital_angle = 180.0
@@ -173,12 +179,21 @@ ridge_weight = 0.5
 color_deep = Color(0.04, 0.12, 0.26, 1)
 color_shallow = Color(0.13, 0.38, 0.52, 1)
 color_shore = Color(0.72, 0.68, 0.5, 1)
-color_low = Color(0.24, 0.42, 0.22, 1)
-color_high = Color(0.4, 0.33, 0.24, 1)
-color_peak = Color(0.92, 0.93, 0.95, 1)
+color_low = Color(0.2, 0.36, 0.18, 1)
+color_high = Color(0.35, 0.29, 0.2, 1)
+color_peak = Color(0.9, 0.91, 0.93, 1)
+color_rock = Color(0.35, 0.32, 0.28, 1)
 ocean_depth = 0.55
 water_color = Color(0.06, 0.28, 0.45, 0.72)
-
+water_deep_color = Color(0.01, 0.07, 0.18, 0.95)
+atmosphere_enabled = true
+atmosphere_color = Color(0.34, 0.56, 1.0, 1)
+atmosphere_height = 0.04
+atmosphere_density = 1.15
+clouds_enabled = true
+cloud_coverage = 0.3
+cloud_height = 0.016
+cloud_drift = 0.35
 [node name="MeshInstance3D" type="MeshInstance3D" parent="Planet1" unique_id=703310355]
 mesh = SubResource("SphereMesh_1bvp3")
 
@@ -194,28 +209,35 @@ offset_bottom = 40.0
 [node name="Planet2" type="StaticBody3D" parent="." unique_id=130451711 node_paths=PackedStringArray("_orbital_parent")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -236.832, 0, 512.531)
 script = ExtResource("2_h2yge")
+display_name = "Ferrum"
 _orbital_parent = NodePath("../Sun")
 _orbital_radius = 2400.0
 _orbital_angle = 200.0
 surface_radius = 260.0
-_day_length = 300.0
+_day_length = 420.0
 terrain_enabled = true
-terrain_amplitude = 0.06
+terrain_amplitude = 0.075
 terrain_seed = 21
-mesh_resolution = 160
-continent_frequency = 0.95
-detail_frequency = 2.8
-sea_level_bias = -0.04
-detail_weight = 0.3
-ridge_weight = 0.75
-color_deep = Color(0.1, 0.15, 0.16, 1)
-color_shallow = Color(0.2, 0.32, 0.32, 1)
-color_shore = Color(0.6, 0.45, 0.31, 1)
-color_low = Color(0.52, 0.32, 0.2, 1)
-color_high = Color(0.44, 0.26, 0.2, 1)
-color_peak = Color(0.82, 0.8, 0.78, 1)
-water_color = Color(0.12, 0.3, 0.3, 0.7)
-
+shore_easing = 0.12
+mesh_resolution = 176
+continent_frequency = 0.8
+detail_frequency = 3.6
+sea_level_bias = 0.45
+detail_weight = 0.35
+ridge_weight = 1.15
+color_deep = Color(0.32, 0.18, 0.12, 1)
+color_shallow = Color(0.45, 0.26, 0.16, 1)
+color_shore = Color(0.5, 0.31, 0.19, 1)
+color_low = Color(0.55, 0.34, 0.2, 1)
+color_high = Color(0.42, 0.24, 0.16, 1)
+color_peak = Color(0.58, 0.46, 0.38, 1)
+color_rock = Color(0.4, 0.22, 0.15, 1)
+water_enabled = false
+atmosphere_enabled = true
+atmosphere_color = Color(0.85, 0.5, 0.3, 1)
+atmosphere_sunset_color = Color(1.0, 0.42, 0.2, 1)
+atmosphere_height = 0.028
+atmosphere_density = 0.6
 [node name="MeshInstance3D" type="MeshInstance3D" parent="Planet2" unique_id=631325146]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.361847)
 mesh = SubResource("SphereMesh_1bvp3")
@@ -226,29 +248,42 @@ shape = SubResource("SphereShape3D_lquwl")
 [node name="Planet3" type="StaticBody3D" parent="." unique_id=1882624608 node_paths=PackedStringArray("_orbital_parent")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -649.519, 0, -375)
 script = ExtResource("2_h2yge")
+display_name = "Thule"
 _orbital_parent = NodePath("../Sun")
 _orbital_radius = 3600.0
 _orbital_angle = 60.0
 surface_radius = 140.0
 _day_length = 120.0
 terrain_enabled = true
-terrain_amplitude = 0.045
+terrain_amplitude = 0.05
 terrain_seed = 43
+shore_easing = 0.12
 mesh_resolution = 160
 continent_frequency = 1.5
-detail_frequency = 3.2
+detail_frequency = 5.0
 sea_level_bias = -0.1
 detail_weight = 0.45
-ridge_weight = 0.35
-color_deep = Color(0.03, 0.16, 0.24, 1)
-color_shallow = Color(0.13, 0.52, 0.55, 1)
-color_shore = Color(0.87, 0.83, 0.63, 1)
-color_low = Color(0.25, 0.5, 0.26, 1)
-color_high = Color(0.3, 0.4, 0.24, 1)
-color_peak = Color(0.66, 0.66, 0.6, 1)
+ridge_weight = 0.95
+color_deep = Color(0.3, 0.42, 0.52, 1)
+color_shallow = Color(0.52, 0.66, 0.74, 1)
+color_shore = Color(0.78, 0.85, 0.9, 1)
+color_low = Color(0.84, 0.89, 0.93, 1)
+color_high = Color(0.72, 0.79, 0.86, 1)
+color_peak = Color(0.97, 0.98, 1.0, 1)
+color_rock = Color(0.42, 0.46, 0.52, 1)
 ocean_depth = 0.9
-water_color = Color(0.05, 0.42, 0.5, 0.68)
-
+water_color = Color(0.42, 0.62, 0.7, 0.55)
+water_deep_color = Color(0.16, 0.32, 0.44, 0.85)
+atmosphere_enabled = true
+atmosphere_color = Color(0.62, 0.8, 1.0, 1)
+atmosphere_sunset_color = Color(0.85, 0.72, 0.9, 1)
+atmosphere_height = 0.032
+atmosphere_density = 0.9
+clouds_enabled = true
+cloud_color = Color(0.92, 0.95, 1.0, 1)
+cloud_coverage = 0.5
+cloud_height = 0.014
+cloud_drift = 0.6
 [node name="MeshInstance3D" type="MeshInstance3D" parent="Planet3" unique_id=1524999546]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.361847)
 mesh = SubResource("SphereMesh_1bvp3")
@@ -256,8 +291,92 @@ mesh = SubResource("SphereMesh_1bvp3")
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Planet3" unique_id=498119634]
 shape = SubResource("SphereShape3D_lquwl")
 
+[node name="Planet4" type="StaticBody3D" parent="." unique_id=1882624609 node_paths=PackedStringArray("_orbital_parent")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 700, 0, 0)
+script = ExtResource("2_h2yge")
+display_name = "Ember"
+_orbital_parent = NodePath("../Sun")
+_orbital_radius = 700.0
+_orbital_angle = 300.0
+surface_radius = 120.0
+_surface_gravity = 11.4
+_day_length = 90.0
+terrain_enabled = true
+terrain_amplitude = 0.085
+terrain_seed = 61
+shore_easing = 0.12
+mesh_resolution = 160
+continent_frequency = 1.4
+detail_frequency = 4.5
+sea_level_bias = 0.1
+detail_weight = 0.4
+ridge_weight = 1.3
+color_deep = Color(0.12, 0.05, 0.04, 1)
+color_shallow = Color(0.2, 0.08, 0.05, 1)
+color_shore = Color(0.26, 0.13, 0.09, 1)
+color_low = Color(0.19, 0.12, 0.11, 1)
+color_high = Color(0.15, 0.11, 0.11, 1)
+color_peak = Color(0.36, 0.31, 0.3, 1)
+color_rock = Color(0.13, 0.1, 0.1, 1)
+lava_color = Color(1.0, 0.36, 0.06, 1)
+lava_strength = 3.4
+water_enabled = false
+atmosphere_enabled = true
+atmosphere_color = Color(0.9, 0.34, 0.12, 1)
+atmosphere_sunset_color = Color(1.0, 0.6, 0.15, 1)
+atmosphere_height = 0.05
+atmosphere_density = 1.5
+clouds_enabled = true
+cloud_color = Color(0.28, 0.22, 0.2, 1)
+cloud_coverage = 0.5
+cloud_height = 0.026
+cloud_drift = 1.2
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Planet4"]
+mesh = SubResource("SphereMesh_1bvp3")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Planet4"]
+shape = SubResource("SphereShape3D_lquwl")
+
+[node name="Moon1" type="StaticBody3D" parent="." unique_id=1882624610 node_paths=PackedStringArray("_orbital_parent")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 844.606)
+script = ExtResource("2_h2yge")
+display_name = "Lys"
+_orbital_parent = NodePath("../Planet1")
+_orbital_radius = 600.0
+_orbital_angle = 25.0
+surface_radius = 52.0
+_surface_gravity = 2.1
+_tidally_locked = true
+terrain_enabled = true
+terrain_amplitude = 0.09
+terrain_seed = 88
+shore_easing = 0.12
+mesh_resolution = 128
+continent_frequency = 2.2
+detail_frequency = 6.0
+sea_level_bias = 0.5
+detail_weight = 0.55
+ridge_weight = 0.9
+color_deep = Color(0.2, 0.2, 0.21, 1)
+color_shallow = Color(0.26, 0.26, 0.27, 1)
+color_shore = Color(0.38, 0.37, 0.36, 1)
+color_low = Color(0.44, 0.43, 0.42, 1)
+color_high = Color(0.34, 0.33, 0.33, 1)
+color_peak = Color(0.66, 0.65, 0.64, 1)
+color_rock = Color(0.3, 0.29, 0.29, 1)
+water_enabled = false
+atmosphere_enabled = false
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Moon1"]
+mesh = SubResource("SphereMesh_1bvp3")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Moon1"]
+shape = SubResource("SphereShape3D_lquwl")
+
 [node name="Station1" type="StaticBody3D" parent="." node_paths=PackedStringArray("orbital_parent", "hatch")]
 script = ExtResource("8_station")
+display_name = "Kestrel Station"
 orbital_parent = NodePath("../Planet1")
 orbital_radius = 420.0
 orbital_angle = 40.0

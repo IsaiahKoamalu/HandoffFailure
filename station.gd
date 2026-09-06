@@ -33,6 +33,9 @@ class_name Station
 ## At deck level, not at the hull's centreline. A ship's port is at its cabin
 ## floor, so putting this anywhere else means the two floors meet at a step —
 ## and the astronaut walks between them.
+## Name shown to the player, as on Planet.
+@export var display_name: String = ""
+
 @export var port_offset: Vector3 = Vector3(0.0, -4.0, -14.0)
 ## Outward normal of the port face, in the station's own frame: the direction a
 ## ship approaches *from*. A docking ship travels along the negative of this.
@@ -126,6 +129,11 @@ func update_orbit(time: float) -> void:
 
 
 # --- The port ----------------------------------------------------------------
+
+## What to call this station on screen.
+func label() -> String:
+	return display_name if display_name != "" else name
+
 
 ## World position of the docking port.
 func port_position() -> Vector3:

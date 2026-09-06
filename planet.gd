@@ -10,6 +10,11 @@ class_name Planet
 ## pure function of time, which is what lets SolarSystem run at arbitrary
 ## `time_scale` and reproduce the same system state after a reload.
 
+## Name shown to the player. The node is called Planet2 and always will be --
+## its name is a NodePath in three other places and a key in the save file --
+## but nobody is flying to "Planet2".
+@export var display_name: String = ""
+
 @export_category("Orbit")
 @export var _orbital_parent: Planet
 @export var _orbital_radius: float = 0.0
@@ -49,6 +54,15 @@ class_name Planet
 @export_range(0.0, 1.5, 0.01) var detail_weight: float = 0.35
 ## Weight of the ridged layer. Raise for sharp alpine ranges, drop for hills.
 @export_range(0.0, 1.5, 0.01) var ridge_weight: float = 0.85
+## How far inland the ground takes to rise from sea level, as a fraction of the
+## continent signal. Wide leaves a broad apron of near-zero height around every
+## landmass that the colour ramp paints in beach sand, so the continents read as
+## pale from orbit; narrow gives them a defined edge.
+##
+## It changes the height field, so it is per-planet rather than a global tweak:
+## the landing task is measured against Kestrel's ground and a world the trained
+## policy has never seen is not the world it was scored on.
+@export_range(0.02, 0.5, 0.01) var shore_easing: float = 0.25
 
 @export_category("Appearance")
 ## Hypsometric ramp, deepest seabed to highest peak. The single biggest lever
@@ -59,6 +73,39 @@ class_name Planet
 @export var color_low: Color = Color(0.28, 0.38, 0.23)
 @export var color_high: Color = Color(0.42, 0.33, 0.25)
 @export var color_peak: Color = Color(0.88, 0.89, 0.90)
+## Colour of exposed rock on anything too steep to hold soil. The terrain
+## shader blends to this by slope, which is what stops a planet reading as a
+## painted dome the moment you get close enough to see a hillside.
+@export var color_rock: Color = Color(0.33, 0.30, 0.27)
+## Size of the close-range surface texture, in cycles per world unit. The mesh
+## has no UVs, so this is fed to a triplanar sample rather than a mapping.
+@export_range(0.02, 2.0, 0.01) var detail_texture_scale: float = 0.35
+## Ground below sea level that emits its own light. Zero strength is every
+## ordinary world; a volcanic one turns it up and its basins glow.
+@export var lava_color: Color = Color(1.0, 0.35, 0.05)
+@export_range(0.0, 8.0, 0.1) var lava_strength: float = 0.0
+
+@export_category("Atmosphere")
+## A shell of added light around the planet. Off for airless bodies, which is
+## most of what makes a moon look like a moon next to a world.
+@export var atmosphere_enabled: bool = false
+@export var atmosphere_color: Color = Color(0.35, 0.55, 1.0)
+## Colour the limb takes where the light is grazing. Sunrise, essentially.
+@export var atmosphere_sunset_color: Color = Color(1.0, 0.55, 0.28)
+## Shell height as a fraction of surface_radius.
+@export_range(0.005, 0.2, 0.001) var atmosphere_height: float = 0.035
+@export_range(0.0, 4.0, 0.05) var atmosphere_density: float = 1.0
+
+@export_category("Clouds")
+@export var clouds_enabled: bool = false
+@export var cloud_color: Color = Color(1.0, 1.0, 1.0)
+## How much of the sky is covered. 0 is clear, 1 is solid overcast.
+@export_range(0.0, 1.0, 0.01) var cloud_coverage: float = 0.45
+## Cloud deck height as a fraction of surface_radius.
+@export_range(0.002, 0.1, 0.001) var cloud_height: float = 0.018
+## Drift relative to the ground, in degrees per second. Small: weather that
+## visibly races across a landscape reads as a spinning texture, not weather.
+@export_range(0.0, 5.0, 0.01) var cloud_drift: float = 0.35
 
 @export_category("Ocean")
 @export var water_enabled: bool = true
@@ -69,6 +116,9 @@ class_name Planet
 ## The ocean is a smooth sphere, so this can stay low until you add waves.
 @export_range(4, 128, 1) var water_resolution: int = 32
 @export var water_color: Color = Color(0.05, 0.25, 0.45, 0.75)
+## Colour looking straight down into deep water. Alpha is used: deep water is
+## opaque, and a single translucent colour everywhere reads as coloured glass.
+@export var water_deep_color: Color = Color(0.02, 0.10, 0.22, 0.94)
 
 @export_category("Terrain collision")
 ## Half-width of the streamed collision patch, in world units. You need a fixed
@@ -87,6 +137,8 @@ var _mountains: FastNoiseLite
 ## Built off-thread by generate_terrain_mesh, attached by apply_terrain.
 var _built_mesh: ArrayMesh = null
 var _far_mesh: ArrayMesh = null
+## The cloud shell, or null on a body with no weather.
+var _clouds: Node3D = null
 ## One streamed patch per terrain client, keyed by the client node.
 ##
 ## Deliberately not a single shared patch: two clients standing apart on the
@@ -166,13 +218,32 @@ func apply_terrain() -> void:
 	_build_terrain()
 
 
+## True when there is no renderer to draw for -- a training run, or any of the
+## headless checks. Atmospheres, clouds and the noise textures the terrain
+## shader samples all cost real CPU to build and nothing at all to look at.
+static func _drawing() -> bool:
+	return DisplayServer.get_name() != "headless"
+
+
+## Noise for the shader to sample. Seamless, because a tiling artefact on a
+## planet-sized surface is a grid you can see from orbit.
+static func _noise_texture(seed_value: int, frequency: float, octaves: int) -> NoiseTexture2D:
+	var noise := FastNoiseLite.new()
+	noise.seed = seed_value
+	noise.frequency = frequency
+	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
+	noise.fractal_octaves = octaves
+
+	var texture := NoiseTexture2D.new()
+	texture.width = 256
+	texture.height = 256
+	texture.seamless = true
+	texture.noise = noise
+	return texture
+
+
 func _build_terrain() -> void:
-	# Vertex colours carry the terrain, so the mesh needs a material that reads
-	# them. Without this the planet renders in Godot's default white.
-	var mat := StandardMaterial3D.new()
-	mat.vertex_color_use_as_albedo = true
-	mat.roughness = 0.95
-	mat.metallic = 0.0
+	var mat: Material = _terrain_material()
 
 	# Distance culling. Every planet used to draw its full mesh at all times, so
 	# a body 59 pixels tall on screen cost the same 303k triangles as the one
@@ -219,6 +290,45 @@ func _build_terrain() -> void:
 
 	if water_enabled:
 		_build_water()
+	if _drawing():
+		if atmosphere_enabled:
+			_build_atmosphere()
+		if clouds_enabled:
+			_build_clouds()
+
+
+## Material for the terrain mesh.
+##
+## Vertex colours carry the hypsometric ramp either way -- without something
+## reading them the planet renders in Godot's default white. The shader adds
+## what the ramp alone cannot: close-range texture and bare rock on slopes.
+func _terrain_material() -> Material:
+	if not _drawing():
+		var plain := StandardMaterial3D.new()
+		plain.vertex_color_use_as_albedo = true
+		plain.roughness = 0.95
+		plain.metallic = 0.0
+		return plain
+
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://shaders/terrain.gdshader")
+	# Frequencies are per texture, and the shader scales the sample point, so
+	# these two only have to be broadband -- the scale uniforms do the choosing.
+	mat.set_shader_parameter("detail_noise", _noise_texture(terrain_seed + 11, 0.04, 4))
+	mat.set_shader_parameter("macro_noise", _noise_texture(terrain_seed + 12, 0.01, 3))
+	mat.set_shader_parameter("detail_scale", detail_texture_scale)
+	# Macro variation is sized against the planet, so a small moon and a large
+	# world both get roughly the same number of patches across their faces.
+	mat.set_shader_parameter("macro_scale", 0.9 / maxf(surface_radius, 1.0))
+	mat.set_shader_parameter("rock_color", color_rock)
+	mat.set_shader_parameter("emission_color", lava_color)
+	mat.set_shader_parameter("emission_strength", lava_strength)
+	# Glow starts at sea level and reaches full strength at the deepest the
+	# basins go, which is the same floor the ocean would have sat on.
+	mat.set_shader_parameter("emission_radius", surface_radius)
+	mat.set_shader_parameter("emission_depth",
+		maxf(absf(get_min_terrain_height()), 0.001))
+	return mat
 
 
 func _build_water() -> void:
@@ -226,17 +336,80 @@ func _build_water() -> void:
 	ocean.name = "Ocean"
 	ocean.mesh = PlanetMesh.build(null, water_resolution, surface_radius)
 
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = water_color
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	# Two-sided: with default back-face culling the surface disappears the
-	# moment the camera drops below it.
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	mat.roughness = 0.08
-	mat.metallic = 0.2
-	ocean.material_override = mat
+	if _drawing():
+		var mat := ShaderMaterial.new()
+		mat.shader = load("res://shaders/ocean.gdshader")
+		mat.set_shader_parameter("shallow_color", water_color)
+		mat.set_shader_parameter("deep_color", water_deep_color)
+		ocean.material_override = mat
+	else:
+		var plain := StandardMaterial3D.new()
+		plain.albedo_color = water_color
+		plain.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		plain.cull_mode = BaseMaterial3D.CULL_DISABLED
+		ocean.material_override = plain
 
 	add_child(ocean)
+
+
+## The glow around the limb. A sphere shell a few percent larger than the
+## planet, drawn as added light.
+##
+## Deliberately outside the terrain rather than a post-process: it has to sit
+## correctly in front of and behind other bodies, and a screen-space halo does
+## not survive a moon passing between the camera and the planet.
+func _build_atmosphere() -> void:
+	var shell := MeshInstance3D.new()
+	shell.name = "Atmosphere"
+	var sphere := SphereMesh.new()
+	var r: float = surface_radius * (1.0 + atmosphere_height)
+	sphere.radius = r
+	sphere.height = r * 2.0
+	sphere.radial_segments = 64
+	sphere.rings = 32
+	shell.mesh = sphere
+	shell.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://shaders/atmosphere.gdshader")
+	mat.set_shader_parameter("atmosphere_color", atmosphere_color)
+	mat.set_shader_parameter("sunset_color", atmosphere_sunset_color)
+	mat.set_shader_parameter("density", atmosphere_density)
+	# The star is at the origin of the system and never moves, so where it is
+	# can be written once instead of pushed to the GPU every frame.
+	mat.set_shader_parameter("sun_position", Vector3.ZERO)
+	shell.material_override = mat
+	add_child(shell)
+
+
+## The cloud deck. A second shell, spun slowly against the ground by
+## `update_orbit` so weather is not painted onto the terrain.
+func _build_clouds() -> void:
+	var deck := MeshInstance3D.new()
+	deck.name = "Clouds"
+	var sphere := SphereMesh.new()
+	var r: float = surface_radius * (1.0 + cloud_height)
+	sphere.radius = r
+	sphere.height = r * 2.0
+	sphere.radial_segments = 96
+	sphere.rings = 48
+	deck.mesh = sphere
+	deck.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://shaders/clouds.gdshader")
+	# Three octaves, not the terrain's four: a fourth adds a speckle at cloud
+	# scale that reads as television static rather than weather.
+	mat.set_shader_parameter("cloud_noise", _noise_texture(terrain_seed + 31, 0.015, 3))
+	mat.set_shader_parameter("cloud_color", cloud_color)
+	mat.set_shader_parameter("coverage", cloud_coverage)
+	# Sized against the planet, so coverage means the same thing on any body.
+	mat.set_shader_parameter("noise_scale", 1.3 / maxf(surface_radius, 1.0))
+	mat.set_shader_parameter("softness", 0.3)
+	mat.set_shader_parameter("opacity", 0.62)
+	deck.material_override = mat
+	add_child(deck)
+	_clouds = deck
 
 
 ## Signed "landness" for a planet-LOCAL direction: above zero is dry ground,
@@ -282,7 +455,7 @@ func get_terrain_height(dir: Vector3) -> float:
 	mask = minf(mask, 1.0)
 
 	# Ease the coastline in so land does not begin at a cliff edge.
-	var shore: float = smoothstep(0.0, 0.25, mask)
+	var shore: float = smoothstep(0.0, shore_easing, mask)
 
 	var rolling: float = _detail.get_noise_3dv(dir) * 0.5 + 0.5
 	var ridges: float = _mountains.get_noise_3dv(dir) * 0.5 + 0.5
@@ -320,11 +493,20 @@ func get_terrain_color(h: float) -> Color:
 	# Measured peaks land near two thirds of the ceiling, so scale to that or
 	# the snow line never appears.
 	var t2 := clampf(h / maxf(get_max_terrain_height() * 0.66, 0.0001), 0.0, 1.0)
-	if t2 < 0.12:
-		return color_shore.lerp(color_low, t2 / 0.12)
+	# The bands below are where the snow line, the treeline and the beach sit.
+	# They were retuned once already: with ridge_weight raised to give the
+	# worlds real mountains, a peak band starting at 0.6 put snow over most of
+	# every continent and the temperate world came out white.
+	# The shore band is deliberately narrow. Most of a continent sits low, so a
+	# wide one paints whole interiors in beach sand -- measured, it turned a
+	# temperate world into a pale desert with a green fringe.
+	if t2 < 0.05:
+		return color_shore.lerp(color_low, t2 / 0.05)
 	if t2 < 0.55:
-		return color_low.lerp(color_high, (t2 - 0.12) / 0.43)
-	return color_high.lerp(color_peak, (t2 - 0.55) / 0.45)
+		return color_low.lerp(color_high, (t2 - 0.05) / 0.5)
+	if t2 < 0.84:
+		return color_high
+	return color_high.lerp(color_peak, (t2 - 0.84) / 0.16)
 
 
 ## Deepest the seabed can ever go, relative to surface_radius. Always <= 0.
@@ -618,6 +800,12 @@ func update_orbit(time: float) -> void:
 
 	global_basis = _rest_basis * Basis(Vector3.UP, _spin_rate * time)
 
+	# Clouds are a child, so they already have the planet's spin. This is the
+	# extra drift *relative to the ground* -- without it the deck is painted on
+	# and the weather never changes.
+	if _clouds != null:
+		_clouds.rotation = Vector3(0.0, deg_to_rad(cloud_drift) * time, 0.0)
+
 
 # Acceleration due to this planet’s gravity at a world-space point
 func get_acceleration_at_position(world_pos: Vector3) -> Vector3:
@@ -659,6 +847,12 @@ func get_relative_velocity_to_surface(world_pos: Vector3, linear_velocity: Vecto
 
 # Number of ancestors in the orbital chain
 # e.g., Sun=0, Earth=1 (Sun), Moon=2 (Earth->Sun)
+## What to call this body on screen. Falls back to the node name, so a body
+## with no authored name is still identifiable rather than blank.
+func label() -> String:
+	return display_name if display_name != "" else name
+
+
 func how_many_parents() -> int:
 	if _orbital_parent == null:
 		return 0
