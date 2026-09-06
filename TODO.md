@@ -87,6 +87,19 @@ Ordered roughly by how much they would change what we believe, not by effort.
       that from exploding, but the honest fix is to train with a fuel budget so
       the channel means something. See the note in `rl/README.md`.
 
+- [ ] **The dock controller cannot hold a standoff.** It is a velocity
+      controller with no position damping, so at an axial setpoint the sign of
+      its command flips either side of the mark and it hunts. On a normal
+      approach this never shows, because the ship crosses the standoff moving
+      and commits before it settles there. It shows immediately if the transit
+      leg is made to hand over at the mouth of the corridor: the ship then holds
+      at the standoff, the commands saturate, and it sits there swinging between
+      two units a second in and two out until it drifts off. That is why the
+      handover is still at twice the corridor length and not at the corridor
+      itself, which would otherwise be the tidier arrangement -- transit already
+      aims there. A derivative term on the axial error, or a position hold that
+      is not built out of a velocity loop, would fix it.
+
 ## Physics
 
 - [x] **A parked ship sits on a knife edge.** Parking needed relative speed

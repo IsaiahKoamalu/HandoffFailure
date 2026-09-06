@@ -110,16 +110,42 @@ const DOCK_ACROSS_GAIN: float = 3.0
 ## Ceiling on any commanded speed, units per second.
 const DOCK_SPEED_MAX: float = 5.0
 ## Closing rate per unit of range, so contact is gentle without a braking phase.
-const DOCK_ARRIVE_GAIN: float = 0.25
+const DOCK_ARRIVE_GAIN: float = 0.45
 ## Closing rate held once lined up. Everything else here tapers to nothing on
 ## arrival, and a proportional law against a standing disturbance stops where
 ## its command equals it -- measured, four tenths of a unit short of the gate.
-const DOCK_CREEP: float = 0.6
+##
+## Lower than it was, because the latch now absorbs the arrival velocity into
+## the retraction instead of stopping the hull dead: what used to have to be
+## brisk enough to beat the disturbance and then hit like a bump can now be a
+## press.
+const DOCK_CREEP: float = 0.35
 ## Lateral offset at which closing is throttled to nothing, in world units.
 const DOCK_TIGHT: float = 1.5
+## How far out on the corridor axis the ship holds while it gets centred.
+##
+## The reason this exists: without an axial setpoint, a ship that arrives off to
+## one side has no command along the normal at all, so it holds whatever axial
+## distance it happened to arrive with -- which is about zero -- and corrects
+## laterally from there. Measured: twenty-four seconds sliding across the face
+## of the station at four and a half units a second, a metre outside the hull,
+## before slotting in sideways at the end. Every part of that is in tolerance
+## and none of it looks like a spacecraft docking.
+const DOCK_STANDOFF: float = 25.0
 ## Alignment required before closing at all.
 const DOCK_COMMIT_ALIGN: float = -0.95
+## Having committed to the run in, the lateral error that sends the ship back
+## out to the standoff. Wider than DOCK_TIGHT on purpose: one threshold for both
+## decisions chatters, and a ship that alternates between closing and backing
+## off every few ticks is the worst-looking failure of the two.
+const DOCK_ABORT_LATERAL: float = 3.0
 ## Gain on the velocity error, and on pointing and spin.
+##
+## Low on purpose. Raising it to close the proportional law's steady-state
+## error does not survive contact: at 1.2 the command saturates, and a saturated
+## P loop with a tick of delay is a bang-bang oscillator. Measured -- the ship
+## sat off the port swinging between two units a second in and two out, forever,
+## and then diverged. DOCK_CREEP exists to cover the steady-state error instead.
 const DOCK_VELOCITY_GAIN: float = 0.3
 const DOCK_TURN_GAIN: float = 2.5
 const DOCK_SPIN_GAIN: float = 1.2
@@ -151,6 +177,9 @@ var _observation := PackedFloat32Array()
 var _descent_ticks: int = 0
 var _transit_ticks: int = 0
 var _dock_ticks: int = 0
+## Whether the ship has committed to the run down the corridor. Latched, so the
+## decision to go in is not re-argued every tick. See DOCK_ABORT_LATERAL.
+var _dock_committed: bool = false
 ## Whatever the pilot had set before we took over, so disengaging puts it back.
 var _restore_external: bool = false
 
@@ -288,13 +317,17 @@ func _fly_to_station(station: Station) -> void:
 		return
 
 	var to_port: float = _ship.port_position().distance_to(station.port_position())
-	# Hand over at twice the corridor length. Transit aims at the station's
-	# centre and the dock controller aims at its port, so the switch has to
-	# happen while there is still room to fix the difference.
+	# Hand over at twice the corridor length, leaving the dock controller room
+	# to fly its own approach. Handing over closer -- right at the mouth of the
+	# corridor, where transit is now aiming -- sounds tidier and is not: it puts
+	# the ship into a long station-keeping hold at the standoff, and holding
+	# position next to a station is the one thing this controller does badly.
+	# See the note in TODO.md.
 	if to_port <= station.approach_range * 2.0:
 		if phase != Phase.DOCK:
 			phase = Phase.DOCK
 			_dock_ticks = 0
+			_dock_committed = false
 			# The dock controller commands velocities directly and the assist
 			# would be holding a cruise from the transit leg.
 			_ship.clear_cruise()
@@ -328,13 +361,28 @@ func _has_landed(planet: Planet, altitude: float) -> bool:
 ## before arrival — `sqrt(v_arrival^2 + 2 a s)` — capped by CRUISE_SPEED_MAX, so
 ## acceleration, cruise and braking are the same equation evaluated at different
 ## ranges rather than three phases with boundaries to tune between them.
+## Where transit actually flies to.
+##
+## A planet is aimed at directly -- the descent controller takes over from a
+## shell around it and any approach angle is as good as any other. A station is
+## not: it has one door, on one face, and arriving at its centre means arriving
+## somewhere off to the side of that door with the whole approach still to fly.
+## Aiming at the mouth of the corridor instead means the transit leg finishes
+## pointed down it, which is both a shorter trip and the way a ship is supposed
+## to arrive at a port.
+func _transit_aim() -> Vector3:
+	if destination is Station:
+		return (destination as Station).approach_point()
+	return destination.global_position
+
+
 func _run_transit() -> void:
 	_transit_ticks += 1
 	if _transit_ticks > TRANSIT_MAX_TICKS:
 		disengage("transit timed out")
 		return
 
-	var to_target: Vector3 = destination.global_position - _ship.global_position
+	var to_target: Vector3 = _transit_aim() - _ship.global_position
 	var distance: float = to_target.length()
 	if distance < 0.001:
 		return
@@ -342,6 +390,10 @@ func _run_transit() -> void:
 	# Range left to the handover shell, not to the planet's centre or its
 	# surface. Braking to a stop at the surface would mean arriving through the
 	# ground.
+	# Range left to the handover shell, sized per destination: a planet's is a
+	# little above its surface, and a station's is a short hop from the mouth of
+	# its corridor -- which is where _transit_aim is pointing, so this is a
+	# small number rather than a whole corridor length.
 	var handoff_radius: float = SolarSystem.target_radius(destination) * (
 		1.0 + HANDOFF_ALT_FACTOR if destination is Planet else 2.0
 	)
@@ -446,7 +498,6 @@ func _run_dock(station: Station) -> void:
 
 	var normal: Vector3 = station.port_normal()
 	var offset: Vector3 = station.port_position() - _ship.port_position()
-	var distance: float = offset.length()
 	var axial: float = -offset.dot(normal)
 	var across: Vector3 = offset + normal * axial
 	var lateral: float = across.length()
@@ -456,16 +507,33 @@ func _run_dock(station: Station) -> void:
 	if lateral > 0.001:
 		wanted = across / lateral * minf(lateral * DOCK_ACROSS_GAIN, DOCK_SPEED_MAX)
 
-	if axial > 0.0 and lateral < DOCK_TIGHT and alignment < DOCK_COMMIT_ALIGN:
-		var gate: float = clampf(1.0 - lateral / DOCK_TIGHT, 0.0, 1.0)
-		var approach: float = maxf(
-			minf(distance * DOCK_ARRIVE_GAIN, DOCK_SPEED_MAX), DOCK_CREEP
-		)
-		wanted -= normal * (approach * gate)
-	elif axial <= 0.0:
-		# Behind the port face there is nothing to line up on: get out in front
-		# of it first, which is also what keeps this out of the hull.
-		wanted += normal * DOCK_SPEED_MAX
+	# Commit is a latched decision with two thresholds, not a test re-run every
+	# tick: enter the run-in centred and square, leave it only if the ship falls
+	# well outside the corridor.
+	if _dock_committed:
+		if lateral > DOCK_ABORT_LATERAL or alignment > DOCK_COMMIT_ALIGN:
+			_dock_committed = false
+	elif axial > 0.0 and lateral < DOCK_TIGHT and alignment < DOCK_COMMIT_ALIGN:
+		_dock_committed = true
+
+	# The axial setpoint: the port face once committed, a standoff out along the
+	# corridor until then. This is the whole shape of the approach -- the ship
+	# flies out to a point on the axis, turns to face down it, and comes in
+	# along it, instead of correcting sideways wherever it happens to be.
+	#
+	# Still one command per axis, not an aim point blended between the two. A
+	# blend makes them compete and the lateral error settles at exactly whatever
+	# threshold the blend uses, with the ship parked in a perfect corridor until
+	# the clock runs out. Measured twice, at two different thresholds, before it
+	# was believed.
+	var standoff: float = 0.0 if _dock_committed else DOCK_STANDOFF
+	var closing: float = clampf(
+		(axial - standoff) * DOCK_ARRIVE_GAIN, -DOCK_SPEED_MAX, DOCK_SPEED_MAX)
+	if _dock_committed:
+		# A proportional law against a standing disturbance stops where its
+		# command equals it, which is short of the gate. Press on regardless.
+		closing = maxf(closing, DOCK_CREEP)
+	wanted -= normal * closing
 
 	var error: Vector3 = (wanted + station.port_velocity()) - _ship.port_velocity()
 	_command_thrust = _to_local(error) * DOCK_VELOCITY_GAIN

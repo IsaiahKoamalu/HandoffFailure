@@ -543,7 +543,7 @@ func _process_flight_assist(dominant: Planet, movement: Vector3) -> void:
 @export var dock_align: float = -0.9
 ## How far off the centreline contact may be.
 @export var dock_lateral: float = 1.0
-## How long the latch takes to draw the two ports together, in seconds.
+## Longest the latch may take to draw the two ports together, in seconds.
 ##
 ## Not zero, and not skippable. The tolerances above let a ship latch with its
 ## port up to `dock_radius` from the station's, and something has to close that
@@ -553,7 +553,30 @@ func _process_flight_assist(dominant: Planet, movement: Vector3) -> void:
 ## mechanisms are two-stage for this reason: soft capture takes whatever
 ## arrives, then retraction pulls it square. Approaching well still matters,
 ## because everything above still has to pass before any of this happens.
-@export var dock_capture_seconds: float = 0.8
+##
+## A cap rather than a fixed duration: see `_capture_duration`. A ship that
+## arrives nearly square is already home and should not be held for three
+## seconds watching nothing move.
+@export var dock_capture_seconds: float = 3.0
+## Closing rate the retraction aims for, in units per second, and the
+## deceleration it is willing to use to wash off the speed the ship arrived
+## with. Together these set how long a given capture actually takes.
+@export var dock_retract_speed: float = 0.5
+@export var dock_retract_decel: float = 0.8
+## Shortest a capture may take, so a ship that arrives perfectly still gets a
+## visible latch rather than a snap.
+@export var dock_capture_min: float = 0.6
+## Seconds spent hard mated before the hatches open. This is the tunnel coming
+## up to pressure, and it is the reason the doors do not fly open the instant
+## the latches catch -- which they used to, while the ports were still up to two
+## units apart and the join was a hole.
+@export var dock_seal_seconds: float = 1.6
+## Seconds spent with the hatches shut before the latches let go.
+@export var dock_release_seconds: float = 1.2
+## Speed the station pushes the ship off with on release, along the corridor.
+## Small: enough to open a gap the pilot can see before touching the engines,
+## not enough to be a manoeuvre.
+@export var dock_push_speed: float = 0.6
 ## How closely the two "up" axes must agree, as a dot product.
 ##
 ## Not decoration. The astronaut walks through the join, and a ship latched
@@ -573,14 +596,41 @@ func _process_flight_assist(dominant: Planet, movement: Vector3) -> void:
 ## event than the one it causes.
 var docked_to: Station = null
 
-## Where the hull sits in the station's frame while latched. Interpolated from
-## the pose it arrived in toward the mated one over `dock_capture_seconds`.
+## The stages a join goes through. A real docking is a sequence, not an event,
+## and every awkward thing about the old one came from treating it as an event:
+## the hull stopped dead the instant the latches caught, then slid into place on
+## a straight line at constant speed, with both hatches already standing open
+## across a two-unit gap.
+enum DockStage {
+	## Not docked.
+	FREE,
+	## Latches have caught. The retraction is pulling the two ports together,
+	## starting from the velocity the ship arrived with.
+	CAPTURE,
+	## Hard mated, ports closed. The tunnel is coming up to pressure.
+	SEALING,
+	## Open. This is the only stage the astronaut may cross in.
+	MATED,
+	## Hatches shut, waiting on the latches.
+	RELEASING,
+}
+
+## Where this ship is in that sequence. Read by the HUD, and by anything that
+## needs to know whether the join is a doorway yet.
+var dock_stage: DockStage = DockStage.FREE
+
+## Where the hull sits in the station's frame while latched.
 var _dock_local: Transform3D = Transform3D.IDENTITY
 ## The pose it arrived in, and the pose retraction is pulling it to.
 var _dock_arrival: Transform3D = Transform3D.IDENTITY
 var _dock_mated: Transform3D = Transform3D.IDENTITY
-## Progress of the retraction, 0 at capture and 1 once the ports are together.
-var _dock_capture: float = 0.0
+## Seconds spent in the current stage, and how long this stage lasts.
+var _dock_timer: float = 0.0
+var _dock_duration: float = 0.0
+## The velocity the ship arrived with, in the station's frame, scaled into a
+## Hermite tangent. This is what makes the pull-in continuous with the approach
+## instead of starting from a dead stop.
+var _dock_tangent: Vector3 = Vector3.ZERO
 
 
 func port_position() -> Vector3:
@@ -624,19 +674,78 @@ func try_dock(station: Station) -> bool:
 		return false
 
 	docked_to = station
-	_set_hatches(true)
 	# Held in the station's frame, the same trick _process_parking uses to ride
 	# a planet's surface: the station orbits at eight units a second and a hull
 	# pinned in world space would be left behind immediately.
 	_dock_local = station.global_transform.affine_inverse() * global_transform
 	_dock_arrival = _dock_local
 	_dock_mated = _mating_local(station)
-	_dock_capture = 0.0
+
+	# The velocity the ship arrived with, carried into the pull-in so the two
+	# motions join without a step. Expressed in the station's frame, because
+	# that is the frame the whole capture is computed in.
+	var closing: Vector3 = station.global_basis.inverse() 		* (linear_velocity - station.constant_linear_velocity)
+	var travel: float = (_dock_mated.origin - _dock_arrival.origin).length()
+	_dock_duration = _capture_duration(travel, closing.length())
+	# A cubic Hermite with a zero end tangent stays inside its endpoints while
+	# the start tangent is no longer than three times the distance it has to
+	# cover. Past that it overshoots and the ship visibly bounces back off the
+	# port, so the tangent is clipped instead. Clipping costs a small step in
+	# rate at the join; overshooting costs the one thing this is for.
+	_dock_tangent = closing * _dock_duration
+	var reach: float = travel * 3.0
+	if _dock_tangent.length() > reach:
+		_dock_tangent = _dock_tangent.normalized() * reach
+
+	# Hatches stay shut. They open at the end of SEALING, once the ports are
+	# actually together -- opening them here is what used to leave both doors
+	# standing open across the full width of the docking error.
+	_set_stage(DockStage.CAPTURE)
 	linear_velocity = Vector3.ZERO
 	angular_velocity = Vector3.ZERO
 	throttle = 0.0
 	clear_cruise()
 	return true
+
+
+## How long to spend drawing the ports together.
+##
+## Whichever is longer: the time to cross the gap at a sensible closing rate, or
+## the time to wash off the speed the ship arrived with at a sensible
+## deceleration. A ship that arrives nearly square and nearly still gets a short
+## positive latch; one that arrives two units out and moving gets a long, slow
+## pull. Both look deliberate, which a single fixed duration cannot -- it is
+## either a lurch for the first or a wait for the second.
+func _capture_duration(travel: float, closing: float) -> float:
+	return clampf(
+		maxf(travel / maxf(dock_retract_speed, 0.001),
+			closing / maxf(dock_retract_decel, 0.001)),
+		dock_capture_min, dock_capture_seconds)
+
+
+func _set_stage(stage: DockStage) -> void:
+	dock_stage = stage
+	_dock_timer = 0.0
+
+
+## Human-readable stage, for the HUD. The pilot is sitting still watching a
+## sequence run; saying which part of it is running is most of what makes it
+## read as a mechanism rather than a pause.
+func dock_status() -> String:
+	match dock_stage:
+		DockStage.CAPTURE: return "soft capture -- retracting"
+		DockStage.SEALING: return "hard mate -- pressurising"
+		DockStage.MATED: return "docked"
+		DockStage.RELEASING: return "hatches closed -- releasing"
+	return ""
+
+
+## How far through the current stage, 0 to 1. The HUD draws this as a bar, so
+## the wait has a visible end.
+func dock_progress() -> float:
+	if _dock_duration <= 0.0:
+		return 1.0
+	return clampf(_dock_timer / _dock_duration, 0.0, 1.0)
 
 
 ## The pose retraction pulls the ship into, in the station's frame: the two
@@ -684,14 +793,37 @@ func is_hatch_open() -> bool:
 	return _ramp != null and not _ramp.visible
 
 
+## Ask to leave. Shuts the hatches, then lets the latches go a moment later.
+##
+## Staged rather than instant, and the delay is the point: a hull that comes off
+## the port on the same frame the pilot touches the throttle takes an open
+## doorway into vacuum with it. Calling this while the release is already
+## running does nothing, so holding thrust does not restart the cycle.
 func undock() -> void:
-	if docked_to == null:
+	if docked_to == null or dock_stage == DockStage.RELEASING:
 		return
-	# Inherit the station's motion on release, or the ship is instantly doing
-	# eight units a second relative to the thing it just let go of.
-	linear_velocity = docked_to.constant_linear_velocity
+	var sealed: bool = dock_stage == DockStage.MATED
 	_set_hatches(false)
+	_set_stage(DockStage.RELEASING)
+	# Nothing to cycle if the doors never opened -- a pilot who thrusts during
+	# the capture is not waiting on an airlock.
+	_dock_duration = dock_release_seconds if sealed else 0.0
+
+
+## Let the latches go. The end of the release sequence, never called directly.
+func _release() -> void:
+	var station: Station = docked_to
 	docked_to = null
+	_set_stage(DockStage.FREE)
+	_dock_duration = 0.0
+	if station == null or not is_instance_valid(station):
+		return
+	# Inherit the station's motion, or the ship is instantly doing eight units a
+	# second relative to the thing it just let go of -- plus a push along the
+	# corridor, so a gap opens on its own and the pilot is not firing engines
+	# inside a docking tunnel to get one.
+	linear_velocity = station.constant_linear_velocity 		+ station.port_normal() * dock_push_speed
+	angular_velocity = Vector3.ZERO
 
 
 ## Hold the hull on the port, and let go the moment the pilot asks to fly.
@@ -704,6 +836,7 @@ func _process_docking(movement: Vector3, delta: float) -> void:
 		return
 	if not is_instance_valid(docked_to):
 		docked_to = null
+		_set_stage(DockStage.FREE)
 		_set_hatches(false)
 		return
 	if movement != Vector3.ZERO:
@@ -716,17 +849,56 @@ func _process_docking(movement: Vector3, delta: float) -> void:
 		fuel = minf(fuel_seconds, fuel + docked_to.refuel_rate * delta)
 		is_out_of_fuel = fuel <= 0.0
 
-	if _dock_capture < 1.0:
-		_dock_capture = minf(
-			1.0, _dock_capture + delta / maxf(dock_capture_seconds, 0.001))
-		# Interpolated from the arrival pose rather than from the current one:
-		# stepping a fraction of the remaining distance every tick approaches
-		# the mated pose without ever reaching it, and "almost closed" is the
-		# state this whole mechanism exists to get out of.
-		_dock_local = _dock_arrival.interpolate_with(_dock_mated, _dock_capture)
+	_dock_timer += delta
+	match dock_stage:
+		DockStage.CAPTURE:
+			_dock_local = _capture_pose(clampf(
+				_dock_timer / maxf(_dock_duration, 0.001), 0.0, 1.0))
+			if _dock_timer >= _dock_duration:
+				# Set exactly, not left wherever the curve finished. "Almost
+				# closed" is the state this whole mechanism exists to get out
+				# of, and a millimetre of float error in the doorway floor is
+				# still a gap for the astronaut to catch a boot on.
+				_dock_local = _dock_mated
+				_set_stage(DockStage.SEALING)
+				_dock_duration = dock_seal_seconds
+		DockStage.SEALING:
+			if _dock_timer >= _dock_duration:
+				_set_hatches(true)
+				_set_stage(DockStage.MATED)
+				_dock_duration = 0.0
+		DockStage.RELEASING:
+			if _dock_timer >= _dock_duration:
+				_release()
+				return
+
 	global_transform = docked_to.global_transform * _dock_local
 	linear_velocity = Vector3.ZERO
 	angular_velocity = Vector3.ZERO
+
+
+## The hull's pose in the station's frame, a fraction `s` through the capture.
+##
+## A cubic Hermite on the position, because the two things that have to be true
+## at the ends are velocities, not positions: at s=0 the hull is still moving at
+## whatever it arrived with, and at s=1 it has to be completely stopped against
+## the port. A plain lerp gets both wrong -- it starts by throwing away the
+## approach velocity in one frame and ends by stopping from full speed in one
+## frame, and those two steps are exactly what the latch felt like.
+##
+## The basis is slerped on a smootherstep instead. Rotation has no equivalent
+## carry-over worth keeping: the alignment gate in try_dock means the ship is
+## already within a few degrees of square, so what matters is only that the last
+## few degrees start and finish without a corner in them.
+func _capture_pose(s: float) -> Transform3D:
+	var s2: float = s * s
+	var s3: float = s2 * s
+	var from_start: float = 2.0 * s3 - 3.0 * s2 + 1.0
+	var from_tangent: float = s3 - 2.0 * s2 + s
+	var from_end: float = -2.0 * s3 + 3.0 * s2
+	var origin: Vector3 = _dock_arrival.origin * from_start 		+ _dock_tangent * from_tangent 		+ _dock_mated.origin * from_end
+	var turn: float = s3 * (s * (s * 6.0 - 15.0) + 10.0)
+	return Transform3D(_dock_arrival.basis.slerp(_dock_mated.basis, turn), origin)
 
 
 ## Acceleration available at full thrust, in units per second squared.

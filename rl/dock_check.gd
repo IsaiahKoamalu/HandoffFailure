@@ -112,10 +112,50 @@ func _run() -> void:
 	# slot across the full width of the threshold, which is a thing to fall
 	# through.
 	var arrived: float = _ship.port_position().distance_to(_station.port_position())
-	await _settle(int(_ship.dock_capture_seconds * 60.0) + 60)
+
+	# Sample the pull-in tick by tick. What is being measured is not where it
+	# ends up -- that is the next check -- but whether it gets there smoothly.
+	# The old capture lerped the pose on a straight line at constant speed, so
+	# the closing rate stepped from zero to full on the first tick and back to
+	# zero on the last, and those two steps are what "janky" was: the hull
+	# stopped dead as the latches caught, lurched into place, and stopped dead
+	# again. A rate series with no step in it is the whole claim.
+	var rates: Array[float] = []
+	var last: float = arrived
+	var guard: int = 0
+	while _ship.dock_stage == Ship.DockStage.CAPTURE and guard < 1200:
+		await _settle(1)
+		guard += 1
+		var now: float = _ship.port_position().distance_to(_station.port_position())
+		rates.append(last - now)
+		last = now
+	_check("the capture runs as a sequence, not an event",
+		guard > 20 and _ship.dock_stage != Ship.DockStage.CAPTURE,
+		"%d ticks of retraction, ended in %s" % [guard, _ship.dock_status()])
+
+	var fastest: float = 0.0
+	for rate in rates:
+		fastest = maxf(fastest, absf(rate))
+	var jerk: float = 0.0
+	for i in range(1, rates.size()):
+		jerk = maxf(jerk, absf(rates[i] - rates[i - 1]))
+	# Against the same approach, the old constant-rate capture put its entire
+	# closing speed into a single tick at each end, so this ratio was 1.0.
+	var roughness: float = jerk / maxf(fastest, 1e-6)
+	_check("nothing in the pull-in happens in one tick", roughness < 0.15,
+		"worst tick-to-tick change is %.1f%% of the fastest tick" % [roughness * 100.0])
+	_check("and it comes to rest against the port",
+		rates.size() > 0 and absf(rates[rates.size() - 1]) < fastest * 0.05,
+		"last tick moved %.5f units against a peak of %.5f" % [
+			absf(rates[rates.size() - 1]) if rates.size() > 0 else -1.0, fastest])
+
+	await _settle(int(_ship.dock_seal_seconds * 60.0) + 60)
 	var gap: float = _ship.port_position().distance_to(_station.port_position())
 	_check("retraction closes the join", gap < 0.05,
 		"%.3f units apart on arrival, %.4f after" % [arrived, gap])
+	_check("the hatches wait for the ports to meet",
+		_ship.dock_stage == Ship.DockStage.MATED and _ship.is_hatch_open(),
+		"stage %s" % _ship.dock_status())
 
 	var holes: int = 0
 	var probes: int = 0
@@ -210,14 +250,32 @@ func _run() -> void:
 	_check("deck is solid across the room", solid == 4, "%d of 4 corners" % solid)
 
 	# --- Undocking -----------------------------------------------------------
+	# Release is a sequence too: the doors shut, and only then do the latches
+	# let go. A hull that came off the port on the same frame the pilot touched
+	# the throttle would take an open doorway into vacuum with it.
 	_ship.undock()
-	# Measured before any time passes: the station is on a circular orbit, so
-	# its velocity vector turns every tick and comparing a frame later measures
-	# that rotation rather than the handover.
-	var inherited: float = (_ship.linear_velocity
-		- _station.constant_linear_velocity).length()
 	await _settle(2)
-	_check("hatches close on release",
-		not _ship.is_hatch_open() and _station.hatch.visible, "")
-	_check("undocking inherits the station's motion", inherited < 0.01,
-		"%.4f units/s relative" % inherited)
+	_check("hatches close before the latches do",
+		not _ship.is_hatch_open() and _station.hatch.visible
+			and _ship.docked_to == _station,
+		"stage %s, still held" % _ship.dock_status())
+
+	var waited: int = 0
+	while _ship.docked_to != null and waited < 600:
+		await _settle(1)
+		waited += 1
+	_check("the latches let go", _ship.docked_to == null,
+		"after %.2fs" % (waited / 60.0))
+
+	# Measured as soon after release as this loop can see it, which is one tick
+	# later -- so the tolerance has to cover a tick of gravity. The ship is in
+	# free fall beside a station that is not, and that is about 0.03 units/s of
+	# honest physics, not a handover error.
+	var parting: Vector3 = _ship.linear_velocity - _station.constant_linear_velocity
+	_check("undocking inherits the station's motion",
+		absf(parting.length() - _ship.dock_push_speed) < 0.05,
+		"%.4f units/s relative, push is %.2f" % [
+			parting.length(), _ship.dock_push_speed])
+	_check("and is pushed back out along the corridor",
+		parting.normalized().dot(_station.port_normal()) > 0.99,
+		"%.4f" % parting.normalized().dot(_station.port_normal()))

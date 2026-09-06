@@ -222,7 +222,9 @@ func _draw_flight(screen: Vector2, on_foot: bool) -> void:
 
 	_text(at, "FLIGHT", ACCENT, 16)
 	if _ship.docked_to != null:
-		_text_right(Vector2(rect.end.x - PAD, at.y), "DOCKED", GOOD, 14)
+		var mated: bool = _ship.dock_stage == Ship.DockStage.MATED
+		_text_right(Vector2(rect.end.x - PAD, at.y),
+			"DOCKED" if mated else "DOCKING", GOOD if mated else WARN, 14)
 	elif _ship.is_parked():
 		_text_right(Vector2(rect.end.x - PAD, at.y), "LANDED", GOOD, 14)
 	at.y += LINE + 4.0
@@ -375,6 +377,15 @@ func _target_name(target: Node3D) -> String:
 ## port face, how far off the centreline, and whether the ship is the right way
 ## round -- is behind the pilot's head, so it has to be on the glass.
 func _draw_docking(screen: Vector2) -> void:
+	# Latched, the corridor cross-hair has nothing left to say -- the ports are
+	# together and the pilot is not flying. What they need instead is which part
+	# of the sequence is running and how much of it is left, or the ship simply
+	# sits there for three seconds with the doors shut and nothing explaining
+	# why the astronaut cannot get out yet.
+	if _ship.docked_to != null:
+		_draw_dock_sequence(screen)
+		return
+
 	var station: Station = null
 	var best: float = INF
 	for candidate in SolarSystem.Instance.Stations:
@@ -427,6 +438,28 @@ func _draw_docking(screen: Vector2) -> void:
 		"aligned" if lined_up else "turn", mark_color, 12)
 
 
+## The docking sequence, once the latches have caught.
+func _draw_dock_sequence(screen: Vector2) -> void:
+	var size: float = 150.0
+	var rect := Rect2(
+		Vector2(screen.x - MARGIN - size, screen.y - MARGIN - 96.0),
+		Vector2(size, 96.0))
+	_panel(rect)
+	var at: Vector2 = rect.position + Vector2(PAD, PAD + 6.0)
+	_text(at, "DOCKING", ACCENT, 13)
+	at.y += LINE + 2.0
+	_text(at, _ship.docked_to.label(), TEXT_DIM, 12)
+	at.y += LINE
+
+	var running: bool = _ship.dock_stage != Ship.DockStage.MATED
+	_text(at, _ship.dock_status().to_upper(),
+		WARN if running else GOOD, 12)
+	at.y += 8.0
+	if running:
+		_bar(Rect2(at, Vector2(size - PAD * 2.0, 8.0)),
+			_ship.dock_progress(), WARN, "")
+
+
 func _draw_hints(screen: Vector2, on_foot: bool) -> void:
 	var parts: Array[String] = []
 	if on_foot:
@@ -469,7 +502,9 @@ func _autopilot_text() -> String:
 	if auto == null:
 		return "[P] autopilot n/a"
 	if _ship.docked_to != null:
-		return "[P] DOCKED at %s -- thrust to release" % _ship.docked_to.label()
+		if _ship.dock_stage == Ship.DockStage.MATED:
+			return "[P] DOCKED at %s -- thrust to release" % _ship.docked_to.label()
+		return "[P] %s at %s" % [_ship.dock_status(), _ship.docked_to.label()]
 	if auto.is_engaged:
 		return "[P] AUTO %s -> %s" % [
 			auto.phase_name(),
