@@ -19,6 +19,19 @@ run/main_scene="uid://cl55grv86e3kn"
 config/features=PackedStringArray("4.7", "Forward Plus")
 config/icon="res://icon.svg"
 
+[display]
+
+; The HUD is drawn in pixels -- 13pt text, 20px lines, 18px margins. Without a
+; stretch mode those are literal screen pixels, so going fullscreen on a 1440p
+; monitor left the instruments at a third of the screen height they occupy in
+; the windowed default. canvas_items keeps the 3D viewport at the real window
+; resolution and scales only the 2D layer, so the panels grow with the window
+; and the world stays crisp.
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+
 [editor]
 
 version_control/plugin_name="GitPlugin"
