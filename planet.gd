@@ -429,6 +429,21 @@ func _build_atmosphere() -> void:
 	mat.set_shader_parameter("atmosphere_color", atmosphere_color)
 	mat.set_shader_parameter("sunset_color", atmosphere_sunset_color)
 	mat.set_shader_parameter("density", atmosphere_density)
+	# The shader works in path lengths, so it needs both radii to know how much
+	# air a ray crossed and how much of it the planet's own body blocked.
+	mat.set_shader_parameter("surface_radius", surface_radius)
+	mat.set_shader_parameter("atmosphere_radius", r)
+	# A tenth of the shell's height. The visible glow reaches about three scale
+	# heights, so this keeps the rim a tight line low down and leaves the rest
+	# of the shell as headroom to fly through.
+	#
+	# Shrinking it does not dim the sky from the ground: a vertical ray from the
+	# surface always crosses about one scale height of air whatever that height
+	# is, so the ground term normalises out and only the limb gets thinner.
+	# Which is the whole trick -- these worlds are 180 units across and a rim
+	# scaled honestly against that would be a band a fifth of the planet wide.
+	mat.set_shader_parameter("scale_height",
+		maxf((r - surface_radius) * 0.1, 0.001))
 	# The star is at the origin of the system and never moves, so where it is
 	# can be written once instead of pushed to the GPU every frame.
 	mat.set_shader_parameter("sun_position", Vector3.ZERO)

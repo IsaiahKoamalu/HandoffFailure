@@ -618,12 +618,40 @@ Four shells and a shader, none of which touch the height field:
   enough to paint continental interiors in beach sand, is what bleached the
   temperate world in the first pass.
 
-- **Atmosphere** (`shaders/atmosphere.gdshader`). An additive shell a few per
-  cent larger than the planet. `cull_back`, not `cull_disabled`: with both faces
-  drawn the near one is in front of the terrain and adds over the disc while the
-  far one is behind it and depth-rejected, so the halo doubles in exactly the
-  ring outside the silhouette and the seam between one layer and two draws a
-  hard circle around the world.
+- **Atmosphere** (`shaders/atmosphere.gdshader`). An additive shell a little
+  larger than the planet, shaded by **how much air the view ray crosses**:
+  intersect the ray with the shell, subtract what the planet's body blocks,
+  march the remainder accumulating air that thins with altitude, and put the
+  column through Beer–Lambert. One formula, three jobs a heuristic needed three
+  of — the limb glows because a grazing ray travels far through air, the halo
+  fades to nothing at the outer edge because the chord goes to zero there, and
+  the sky is lit from the ground because looking up is also a path through air.
+
+  The version this replaced used `rim = 1 - |N·V|` on the shell, which is at its
+  *maximum* on the outer silhouette. Every planet therefore wore a hard-edged
+  bubble with a visible gap between the terrain and the shell, and a wash of
+  colour over the disc that desaturated the whole world. Photographed before and
+  after with `rl/portrait_check.tscn`; the difference is not subtle.
+
+  **`cull_front`, so the inside of the shell is shaded.** From outside that is
+  the far hemisphere, which the planet's own depth rejects over the disc and
+  leaves as a ring of haze around the silhouette. From the surface it is the sky
+  overhead. Drawing the near faces — which is what this did — means the shell
+  vanishes the moment you fly into it, so **the sky on an Earth-like world was
+  pure black**: an atmosphere you could only see from space. Depth testing stays
+  on, or the haze paints over the ship and the station.
+
+  The scale height is a *tenth* of the shell, not the whole of it. Shrinking it
+  does not dim the sky from the ground — a vertical ray from the surface crosses
+  about one scale height of air whatever that height is, so that term normalises
+  out and only the limb gets thinner. Which is the whole trick: these worlds are
+  180 units across, and a rim scaled honestly against a planet that small would
+  be a band a fifth of its width.
+
+  The sunset tint keys off `1 - |up·sun|`, the band where the sun sits on the
+  local horizon. Keying it off the angle between the view and the sun instead
+  painted entire halos at sunset, because from anywhere but straight down the
+  sun line those two are near perpendicular over most of a rim.
 
 - **Clouds** (`shaders/clouds.gdshader`). A second shell thresholded out of
   noise — cut out rather than painted, so there is clear sky between the
