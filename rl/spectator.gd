@@ -255,8 +255,14 @@ func _stat_line() -> String:
 		parts.append("%s steps" % _compact(int(_stats["steps"])))
 	if _stats.has("ret"):
 		parts.append("return %.1f" % float(_stats["ret"]))
-	if _stats.has("land"):
-		parts.append("landing %.1f%%" % (float(_stats["land"]) * 100.0))
+	# The trainer sends the rate and the name of the outcome it measures, so
+	# this reads "docked 61.2%" on a docking run. Hardcoded as "landing" it
+	# mislabelled every other task's headline number.
+	if _stats.has("success"):
+		parts.append("%s %.1f%%" % [
+			str(_stats.get("goal", "success")),
+			float(_stats["success"]) * 100.0,
+		])
 	return "  " + "   ".join(parts)
 
 

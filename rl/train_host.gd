@@ -237,6 +237,7 @@ func _wait_for_client() -> void:
 		"repeat": repeat,
 		"max_steps": _env.max_steps,
 		"outcomes": outcomes,
+		"success": _env.success_outcome(),
 	})
 	print("[train_host] trainer connected")
 

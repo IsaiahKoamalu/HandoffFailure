@@ -141,6 +141,11 @@ class GodotVecEnv:
         self.outcome_names = {
             int(key): value for key, value in self._hello["outcomes"].items()
         }
+        # Which outcome the run is judged on. The engine says, because only the
+        # task knows: "landed" for landing, "docked" for docking. Older engines
+        # predate the field, and for those every task numbers success 1.
+        self.success_code = int(self._hello.get("success", 1))
+        self.success_name = self.outcome_names.get(self.success_code, "success")
         # Both sides were told the batch size separately, on the command line
         # and here. If they disagree the protocol desynchronises a few frames
         # later with a confusing message, so check it while it is still cheap.

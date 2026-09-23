@@ -349,9 +349,17 @@ def train(args: argparse.Namespace) -> None:
 
     log_path = out_dir / "progress.csv"
     log_file = log_path.open("w", encoding="utf-8")
-    log_file.write("step,iteration,return,length,land_rate,crash_rate,timeout_rate,"
-                   "escape_rate,ditch_rate,miss_rate,mean_impact,value_loss,policy_loss,entropy,"
-                   "elapsed\n")
+    # One column per outcome the *running* task declares, in the order it
+    # declared them, rather than landing's six names spelled out. The header
+    # therefore describes the file, which a fixed one stopped doing the moment
+    # a second task existed -- docking's "collided" would have been written
+    # under "escape_rate", or more likely not at all.
+    outcome_columns = [name for _, name in sorted(env.outcome_names.items())]
+    log_file.write(
+        "step,iteration,return,length,"
+        + ",".join(f"{name}_rate" for name in outcome_columns)
+        + ",mean_impact,value_loss,policy_loss,entropy,elapsed\n"
+    )
 
     global_step = 0
     iterations = args.steps // (rollout * n)
@@ -490,6 +498,7 @@ def train(args: argparse.Namespace) -> None:
         counts = collections.Counter(recent_outcomes)
         total = max(len(recent_outcomes), 1)
         rates = {name: counts[code] / total for code, name in env.outcome_names.items()}
+        success_rate = rates.get(env.success_name, 0.0)
         mean_return = float(np.mean(recent_returns)) if recent_returns else float("nan")
         mean_length = float(np.mean(recent_lengths)) if recent_lengths else float("nan")
         mean_impact = float(np.mean(recent_impacts)) if recent_impacts else float("nan")
@@ -497,11 +506,8 @@ def train(args: argparse.Namespace) -> None:
 
         log_file.write(
             f"{global_step},{iteration},{mean_return:.3f},{mean_length:.1f},"
-            f"{rates.get('landed', 0.0):.4f},{rates.get('crashed', 0.0):.4f},"
-            f"{rates.get('timeout', 0.0):.4f},"
-            f"{rates.get('escaped', 0.0):.4f},{rates.get('ditched', 0.0):.4f},"
-            f"{rates.get('missed', 0.0):.4f},"
-            f"{mean_impact:.3f},"
+            + ",".join(f"{rates.get(name, 0.0):.4f}" for name in outcome_columns)
+            + f",{mean_impact:.3f},"
             f"{value_loss.item():.4f},"
             f"{policy_loss.item():.4f},{entropy_value.item():.4f},{elapsed:.1f}\n"
         )
@@ -514,16 +520,23 @@ def train(args: argparse.Namespace) -> None:
             iter=iteration,
             steps=global_step,
             ret=round(mean_return, 2),
-            land=round(rates["landed"], 4),
-            ditch=round(rates["ditched"], 4),
+            # The rate and its label travel together, so the overlay reads
+            # "docked 61.2%" on a docking run without knowing what docking is.
+            # It used to be sent as "land", which on any other task is a lie.
+            success=round(success_rate, 4),
+            goal=env.success_name,
         )
 
         if iteration % args.log_every == 0 or iteration == 1:
+            # Success first and named, then every other outcome the task has,
+            # so the line is readable without knowing which task is running.
+            breakdown = "  ".join(
+                f"{name} {rates.get(name, 0.0):5.1%}" for name in outcome_columns
+            )
             print(
                 f"iter {iteration:4d}/{iterations}  step {global_step:>9,}  "
                 f"return {mean_return:8.2f}  len {mean_length:6.0f}  "
-                f"land {rates['landed']:5.1%}  crash {rates['crashed']:5.1%}  "
-                f"ditch {rates['ditched']:5.1%}  miss {rates['missed']:5.1%}  "
+                f"{breakdown}  "
                 f"{global_step / max(elapsed, 1e-6):,.0f} sps",
                 flush=True,
             )
@@ -532,8 +545,8 @@ def train(args: argparse.Namespace) -> None:
         # not always end at its peak -- this one climbed from 80% to 91.5% and
         # then gave several points back -- and saving only the final weights
         # throws away the very thing the run was asked to find out.
-        if len(recent_outcomes) >= 100 and rates["landed"] > best_rate:
-            best_rate = rates["landed"]
+        if len(recent_outcomes) >= 100 and success_rate > best_rate:
+            best_rate = success_rate
             best_step = global_step
             save(model, normaliser, out_dir, args, env, tag="best")
 
@@ -544,7 +557,7 @@ def train(args: argparse.Namespace) -> None:
     env.close()
     save(model, normaliser, out_dir, args, env)
     if best_rate >= 0.0:
-        print(f"best landing rate {best_rate:.1%} at step {best_step:,}, "
+        print(f"best {env.success_name} rate {best_rate:.1%} at step {best_step:,}, "
               f"kept alongside as policy_best.json")
     print(f"\nwrote {out_dir / 'policy.json'} and {log_path}")
 

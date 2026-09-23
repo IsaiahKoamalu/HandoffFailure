@@ -111,6 +111,20 @@ func outcome_names() -> Dictionary:
 	return {}
 
 
+## Which outcome counts as the task being done well -- the number a run is
+## judged on and the one "best policy so far" is selected by.
+##
+## The task declares it because only the task knows. The trainer used to assume
+## "landed", which is fine while there is one task and a crash the moment there
+## are two: the first docking run died in the logging with KeyError: 'landed'
+## after a clean warm start, having thrown the rollout away.
+##
+## Defaulted rather than abstract: every outcome enum here numbers success 1
+## upward from RUNNING, so a task that does not care gets the right answer.
+func success_outcome() -> int:
+	return 1
+
+
 # --- Setup -------------------------------------------------------------------
 
 ## Build the agent pool and start every episode. False means the task could not
