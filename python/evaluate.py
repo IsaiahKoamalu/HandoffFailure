@@ -257,6 +257,22 @@ def dock_baseline_controller(obs: np.ndarray) -> np.ndarray:
     return action
 
 
+def expert_for(task: str):
+    """The hand-written controller for a task, by name.
+
+    One dispatch, used by both the scorer and ppo's warm start. Written out
+    because the two used to choose independently and only one of them knew
+    docking existed: `--task docking --warm-start` cloned the *landing* law,
+    which reads a 20-float observation, against docking's 25. Nothing caught it
+    because docking had never been trained.
+    """
+    if task == "docking":
+        return dock_baseline_controller
+    if task == "landing":
+        return baseline_controller
+    raise SystemExit(f"no hand-written controller for task '{task}'")
+
+
 def baseline_controller(obs: np.ndarray) -> np.ndarray:
     """Fly to the planet's largest continent from anywhere, and land on it.
 
@@ -414,7 +430,7 @@ def main() -> None:
         controller = PolicyController(Path(args.policy_path))
         label = f"policy ({controller.trained_steps:,} steps)"
     elif args.controller == "baseline":
-        controller = dock_baseline_controller if args.task == "docking" else baseline_controller
+        controller = expert_for(args.task)
         label = "hand-written baseline"
     else:
         controller = lambda obs: np.zeros((obs.shape[0], ACT_SIZE), dtype=np.float32)

@@ -2,3 +2,6 @@
 .godot/
 /android/
 ~*
+
+# Local Python environment for the RL trainer (rl/README.md).
+.venv/

@@ -31,7 +31,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from evaluate import CONSTANT_STD, baseline_controller
+from evaluate import CONSTANT_STD, expert_for
 from godot_env import ACT_SIZE, RUNNING, GodotVecEnv
 
 
@@ -177,6 +177,7 @@ def behaviour_clone(
     epochs: int,
     lr: float,
     rounds: int = 1,
+    expert=None,
 ) -> np.ndarray:
     """Regress the actor onto the hand-written controller, with DAgger rounds.
 
@@ -202,6 +203,13 @@ def behaviour_clone(
 
     Returns the last observation batch, so the caller can carry straight on.
     """
+    # Whose actions are being fitted. Defaulting to the landing law would put
+    # the old bug back for any caller that forgets, so there is no default.
+    if expert is None:
+        expert_fn = expert_for(env.task)
+    else:
+        expert_fn = expert
+
     observations: list[np.ndarray] = []
     targets: list[np.ndarray] = []
     optimiser = torch.optim.Adam(model.actor.parameters(), lr=lr)
@@ -218,7 +226,7 @@ def behaviour_clone(
                     steps=tick * env.num_agents,
                 )
             # The expert labels every state regardless of who is flying.
-            expert = baseline_controller(obs)
+            expert = expert_fn(obs)
             observations.append(obs.copy())
             targets.append(expert)
             normaliser.update(obs)
@@ -306,10 +314,12 @@ def train(args: argparse.Namespace) -> None:
     cut_buf = torch.zeros(rollout, n)
 
     if args.warm_start > 0:
-        print(f"cloning the baseline controller for {args.warm_start} ticks", flush=True)
+        print(
+            f"cloning the '{env.task}' baseline controller "
+            f"for {args.warm_start} ticks", flush=True)
         raw_obs = behaviour_clone(
             env, model, normaliser, args.warm_start, args.clone_epochs,
-            args.clone_lr, args.dagger_rounds,
+            args.clone_lr, args.dagger_rounds, expert_for(env.task),
         )
     else:
         raw_obs = env.reset()
