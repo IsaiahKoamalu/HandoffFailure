@@ -307,10 +307,11 @@ def train(args: argparse.Namespace) -> None:
     logp_buf = torch.zeros(rollout, n)
     rew_buf = torch.zeros(rollout, n)
     val_buf = torch.zeros(rollout, n)
-    # `done` masks the value bootstrap; `cut` marks the end of an episode for
-    # GAE. They differ exactly on truncation, which ends the segment without
-    # zeroing the future.
-    done_buf = torch.zeros(rollout, n)
+    # `cut` marks a frame an episode ended on, terminated or truncated alike.
+    # One flag is enough: after either kind of ending the next frame belongs to
+    # a new episode, so neither the bootstrap nor the advantage carry may cross
+    # it. Truncation's genuine tail value is folded into that frame's reward
+    # where it is computed, not carried here.
     cut_buf = torch.zeros(rollout, n)
 
     if args.warm_start > 0:
@@ -386,7 +387,6 @@ def train(args: argparse.Namespace) -> None:
 
             ended = terminated | truncated
             rew_buf[t] = torch.as_tensor(reward)
-            done_buf[t] = torch.as_tensor(terminated.astype(np.float32))
             cut_buf[t] = torch.as_tensor(ended.astype(np.float32))
 
             # Truncated episodes get their value bootstrapped from the frame
@@ -428,9 +428,26 @@ def train(args: argparse.Namespace) -> None:
                     following_value = next_value
                 else:
                     following_value = val_buf[t + 1]
-                # done zeroes the bootstrap (the future really is over);
-                # cut zeroes the advantage carry (the segment is over either way).
-                delta = rew_buf[t] + args.gamma * following_value * (1.0 - done_buf[t]) - val_buf[t]
+                # `cut` zeroes both the bootstrap and the advantage carry,
+                # because after either kind of ending frame t+1 belongs to a
+                # different episode -- the env auto-resets -- and its value says
+                # nothing about this one's future.
+                #
+                # This used to mask the bootstrap with `done`, which is right
+                # only if nothing else supplied the cut episode's tail. Something
+                # did: the loop above already folds `gamma * V(final frame)` into
+                # the reward on truncation. So a timeout was bootstrapped twice,
+                # the second time from the first frame of the *next* episode --
+                # and that frame is a fresh docking approach with a 120-point
+                # bonus still ahead of it, so it scores high.
+                #
+                # The result was that every timeout paid a large spurious bonus,
+                # which is a direct instruction to run out the clock. Measured on
+                # docking: timeouts climbed 22% -> 88% while the docked rate fell
+                # from a 79% clone to 0.0%, episode length walking to the cap the
+                # whole way. `done` is still what decides whether a tail exists
+                # at all; it just no longer decides this.
+                delta = rew_buf[t] + args.gamma * following_value * (1.0 - cut_buf[t]) - val_buf[t]
                 last_gae = delta + args.gamma * args.gae_lambda * (1.0 - cut_buf[t]) * last_gae
                 advantages[t] = last_gae
             returns = advantages + val_buf
