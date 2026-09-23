@@ -415,7 +415,8 @@ def train(args: argparse.Namespace) -> None:
                     episode_return[i] = 0.0
                     episode_length[i] = 0
 
-            normaliser.update(raw_obs)
+            if not args.freeze_norm:
+                normaliser.update(raw_obs)
             next_obs = torch.as_tensor(normaliser(raw_obs))
 
         # --- GAE ------------------------------------------------------------
@@ -677,6 +678,12 @@ def parse_args() -> argparse.Namespace:
                              "reaches the start of an episode discounted to a "
                              "quarter of a reward point and the agent optimises "
                              "shaping instead. 6 puts the episode inside the horizon.")
+    parser.add_argument("--freeze-norm", action="store_true",
+                        help="stop updating the observation normaliser once the "
+                             "warm start is over. The statistics a cloned policy "
+                             "was fitted under are part of that policy; letting "
+                             "them drift afterwards changes its inputs without "
+                             "telling it.")
     parser.add_argument("--warm-std", type=float, default=None,
                         help="action standard deviation to start PPO from after a "
                              "warm start. The default init is exp(-1) = 0.37 on "
