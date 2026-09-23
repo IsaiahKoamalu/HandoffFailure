@@ -359,7 +359,7 @@ def train(args: argparse.Namespace) -> None:
     log_file.write(
         "step,iteration,return,length,"
         + ",".join(f"{name}_rate" for name in outcome_columns)
-        + ",mean_impact,value_loss,policy_loss,entropy,elapsed\n"
+        + ",mean_impact,value_loss,policy_loss,entropy,explained_var,elapsed\n"
     )
 
     global_step = 0
@@ -441,16 +441,35 @@ def train(args: argparse.Namespace) -> None:
                 # and that frame is a fresh docking approach with a 120-point
                 # bonus still ahead of it, so it scores high.
                 #
-                # The result was that every timeout paid a large spurious bonus,
-                # which is a direct instruction to run out the clock. Measured on
-                # docking: timeouts climbed 22% -> 88% while the docked rate fell
-                # from a 79% clone to 0.0%, episode length walking to the cap the
-                # whole way. `done` is still what decides whether a tail exists
-                # at all; it just no longer decides this.
+                # So every timeout was paid a spurious bonus. Worth fixing, and
+                # measured to be almost inert: a truncation is one frame per
+                # episode, episodes here run 300-1500 decisions, and a rollout is
+                # 256 decisions x 32 agents, so truncation frames are about 0.1%
+                # of the batch -- and `cut` already stopped the bad value
+                # propagating backwards past that single frame. Two docking runs
+                # either side of this change tracked each other to the decimal
+                # (27.3% vs 27.1% docked at iteration 20, 0.0% by 45). It is a
+                # correctness fix, not the reason PPO loses to its own clone.
+                #
+                # `done` is still what decides whether a tail exists at all; it
+                # just no longer decides this.
                 delta = rew_buf[t] + args.gamma * following_value * (1.0 - cut_buf[t]) - val_buf[t]
                 last_gae = delta + args.gamma * args.gae_lambda * (1.0 - cut_buf[t]) * last_gae
                 advantages[t] = last_gae
             returns = advantages + val_buf
+            # How much of the variation in the return the critic actually
+            # accounts for. 1.0 is a perfect value function, 0.0 is no better
+            # than predicting the mean, and negative is worse than that.
+            #
+            # Logged because it is the one number that separates the two
+            # explanations for a fine-tune that decays: an optimiser drifting
+            # off a good policy, or advantages that are mostly noise because
+            # nothing here can predict a return. No episode in this task fits
+            # inside a rollout -- they run 300 to 1500 decisions against 256 --
+            # so every advantage rests on this estimate, and until now it was
+            # not measured.
+            residual = returns - val_buf
+            explained = 1.0 - residual.var() / returns.var().clamp(min=1e-8)
             # Fold this batch in before normalising, so early iterations -- when
             # the running stats are still the identity -- move quickly.
             value_norm.update(returns)
@@ -526,7 +545,8 @@ def train(args: argparse.Namespace) -> None:
             + ",".join(f"{rates.get(name, 0.0):.4f}" for name in outcome_columns)
             + f",{mean_impact:.3f},"
             f"{value_loss.item():.4f},"
-            f"{policy_loss.item():.4f},{entropy_value.item():.4f},{elapsed:.1f}\n"
+            f"{policy_loss.item():.4f},{entropy_value.item():.4f},"
+            f"{explained.item():.4f},{elapsed:.1f}\n"
         )
         log_file.flush()
 
@@ -553,7 +573,7 @@ def train(args: argparse.Namespace) -> None:
             print(
                 f"iter {iteration:4d}/{iterations}  step {global_step:>9,}  "
                 f"return {mean_return:8.2f}  len {mean_length:6.0f}  "
-                f"{breakdown}  "
+                f"{breakdown}  ev {explained.item():5.2f}  "
                 f"{global_step / max(elapsed, 1e-6):,.0f} sps",
                 flush=True,
             )
