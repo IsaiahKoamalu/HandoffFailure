@@ -200,8 +200,64 @@ RL beats the hand-written controller anywhere in this project.
 
 ```bash
 python evaluate.py --godot ... --project .. --task docking --controller baseline
-python ppo.py --godot ... --project .. --task docking --out ../rl/runs/docking
+python ppo.py --godot ... --project .. --task docking --out ../rl/runs/docking \
+    --repeat 6 --warm-start 3000 --dagger-rounds 3 --warm-std 0.08 \
+    --critic-warmup 10 --freeze-norm
 ```
+
+`--freeze-norm` is not optional here. Without it the observation statistics
+drift away from the ones the clone was fitted under and the policy is destroyed
+before it learns anything; see "the normaliser is part of the policy" below.
+
+#### It does not beat the baseline, and the way it loses is the interesting part
+
+3,000,000 steps, warm-started from the baseline. Every number below is 200
+episodes at `--repeat 6`, scored at the distribution mean.
+
+| | baseline | policy_best | final |
+|---|---|---|---|
+| docked | **84.1%** | 75.0% | 70.5% |
+| mean return | 65.66 | **78.10** | 63.55 |
+| decisions | 353 | **140** | 262 |
+| collided | 8.8% | 17.0% | 15.5% |
+| botched | 7.2% | 8.0% | 14.0% |
+
+So the answer to the open question, for docking, is **no on the headline metric
+and yes on the objective**. The policy returns 19% more than the hand-written
+law and docks in 40% of the decisions, and it gets there by flying an approach
+no proportional controller would: it closes fast and brakes late. It pays for
+that in hull strikes, which is the whole of its 9-point deficit.
+
+That gap is not a training failure, it is the reward being taken at its word.
+Closing quickly is paid twice -- the per-tick time charge, and a `dock_bonus`
+graded to pay more for a fast clean arrival -- while hitting the structure costs
+a flat `collide_penalty` of 40. Under those weights the aggressive approach is
+correct, and the policy found it. Success rate is not what the reward maximises,
+so beating the baseline on success rate would mean changing the task, not the
+optimiser. Raising `collide_penalty` against `dock_bonus` is the obvious next
+experiment and is deliberately not run yet: it redefines the task, and the
+comparison above is only worth having because both controllers were scored on
+the same one.
+
+Two things this run established that are not about docking:
+
+**The normaliser is part of the policy.** `RunningNorm` kept updating through
+training. A cloned policy is fitted under the statistics gathered while the
+*expert* flew -- short episodes, states near the port -- and PPO's rollouts sit
+far out for much longer, so the running mean was dragged about 1.3% per
+iteration toward a different distribution. The policy's inputs moved without the
+policy being told, it flew worse, its states drifted further, and that pulled the
+statistics further still. Measured with `--lr 0`, which reproduces the whole
+collapse with a frozen actor and a frozen critic: 50.6% -> 27.1% -> 3.5% docked
+over forty iterations live, against 53.8% -> 61.5% -> 56.5% with `--freeze-norm`.
+Nothing in the update path was ever involved, which is why changing the entropy
+coefficient, the action sigma, gamma and the GAE truncation handling all left
+the numbers bit-identical.
+
+**`policy_best` overstates by more than was thought.** Its training window
+peaked at 91.0%; those same weights score 75.0% over 200 episodes. Sixteen
+points, not the two or three in `../TODO.md`. It is chosen from ~360 rolling
+windows and takes the luckiest.
 
 #### Four things the baseline had to learn the hard way
 

@@ -18,24 +18,41 @@ Ordered roughly by how much they would change what we believe, not by effort.
       before swapping, and record *why* in `rl/runs/README.md`.
 - [ ] **Stop `policy_best.json` selecting on noise.** It takes the best of ~73
       rolling-window landing rates that carry ~1.9% binomial noise each, so it
-      overstates by two or three points. Either evaluate candidates properly
-      before saving, or average over several windows.
+      overstates by two or three points. Measured on docking, where the run was
+      long enough to take the best of ~360 windows: it claimed 91.0% and those
+      weights score 75.0% over 200 episodes. Sixteen points, not two or three.
+      Either evaluate candidates properly before saving, or average over several
+      windows.
 - [ ] **Find out why fine-tuning erodes after iteration ~20.** Both the critic
       fix and warm-start noise fix raised the peak without removing the decay;
       runs give back ten points over the back half. Suspects: learning-rate
-      schedule, `--ent-coef` at 0.003, sustained off-policy drift.
+      schedule, `--ent-coef` at 0.003, sustained off-policy drift. Add a fourth,
+      now the likeliest: the drifting observation normaliser, which produced
+      exactly this shape on docking and was not learning at all. Test it by
+      re-running an eroding landing fine-tune with `--freeze-norm`.
 - [ ] **Make RL beat the expert, or say plainly that it does not.** It has tied
       or lost in every configuration measured, including under a fuel budget,
       which was supposed to be the case where a learned policy wins. If a fair
       attempt keeps landing on parity, that is a finding and the README should
       lead with it rather than treating it as unfinished business.
 
-- [ ] **Train a docking policy, and see whether it beats the baseline.** The
-      task, the station and the harness all exist; nothing has been trained. The
-      hand-written controller docks 76.7% of the time against 0.0% for no input,
-      and its failures are almost all spawns behind the station that it flies
-      around badly. That is a beatable number and a legible failure mode, which
-      makes this the fairest test yet of the question above.
+- [x] **Train a docking policy, and see whether it beats the baseline.** Done,
+      and it does not: 75.0% against the baseline's 84.1% over 200 episodes. It
+      wins on the objective it was given -- 19% more return, docking in 40% of
+      the decisions -- and loses the 9 points entirely to hull strikes, because
+      the reward pays twice for closing fast and charges 40 once for hitting the
+      structure. See `rl/README.md`. Beating it on success rate means changing
+      `collide_penalty` against `dock_bonus`, which redefines the task; that
+      experiment is deliberately not run yet.
+
+- [ ] **Re-measure landing now that `--freeze-norm` exists.** Every landing
+      number in this repo was produced with the observation normaliser drifting
+      out from under a warm-started policy (see `rl/README.md`). On docking that
+      was worth eighty points of success rate and it was invisible until `--lr 0`
+      reproduced the collapse with a frozen network. Landing warm-starts the same
+      way, so the shipped policy, the 92%/98% comparison and the `base27k`
+      anomaly below were all measured through it. None of them are safe to reason
+      from until a run with the flag says otherwise.
 
 ## Environment
 
