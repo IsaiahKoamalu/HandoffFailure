@@ -282,6 +282,7 @@ def train(args: argparse.Namespace) -> None:
         render_rate=args.render_rate,
         repeat=args.repeat,
         fuel_seconds=args.fuel,
+        max_steps=args.max_steps,
         # A rendered run is paced by the engine rather than by this side, so
         # a rollout takes far longer in wall-clock terms without anything
         # being wrong. The watchdog has to allow for that.
@@ -683,6 +684,16 @@ def parse_args() -> argparse.Namespace:
                              "reaches the start of an episode discounted to a "
                              "quarter of a reward point and the agent optimises "
                              "shaping instead. 6 puts the episode inside the horizon.")
+    parser.add_argument("--max-steps", type=int, default=0,
+                        help="physics ticks before an episode is truncated. 0 "
+                             "keeps the task's own default. evaluate.py has had "
+                             "this since the time limit was found to be what the "
+                             "old 92%% plateau was measuring; the trainer did "
+                             "not, so the horizon a policy trained at could only "
+                             "be changed by editing the env. That makes the "
+                             "base27k comparison -- train short and score long, "
+                             "against train long and score long -- impossible to "
+                             "re-run, which is why it is still open.")
     parser.add_argument("--freeze-norm", action="store_true",
                         help="stop updating the observation normaliser once the "
                              "warm start is over. The statistics a cloned policy "

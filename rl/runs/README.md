@@ -46,7 +46,13 @@ Rates below are as measured at the time, under the environment of the time.
 three different critics all landing at exactly 92.0% is what exposed the time
 limit as the thing being measured.
 
-`base27k` is the anomaly worth chasing — trained on the correct horizon and
-worse for it than `vnorm`, which trained on the wrong one.
+`base27k` *was* the anomaly worth chasing — trained on the correct horizon and
+worse for it than `vnorm`, which trained on the wrong one. It does not
+reproduce. Re-run in one environment with one seed and one recipe, with
+`--max-steps` the only difference and both scored at 27,000 over 200 episodes,
+the correct horizon wins: 94.5% trained at 27,000 against 92.0% trained at
+9,000. The original pair straddled the water change and the ground fixes, so it
+compared two environments as much as two horizons — which is the hazard the
+warning at the top of this table exists for, and it caught us anyway.
 
 `.gdignore` keeps Godot from importing the CSVs as resources.

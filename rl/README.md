@@ -241,7 +241,7 @@ the same one.
 
 Two things this run established that are not about docking:
 
-**The normaliser is part of the policy.** `RunningNorm` kept updating through
+**The normaliser is part of the policy -- on this task.** `RunningNorm` kept updating through
 training. A cloned policy is fitted under the statistics gathered while the
 *expert* flew -- short episodes, states near the port -- and PPO's rollouts sit
 far out for much longer, so the running mean was dragged about 1.3% per
@@ -253,6 +253,18 @@ over forty iterations live, against 53.8% -> 61.5% -> 56.5% with `--freeze-norm`
 Nothing in the update path was ever involved, which is why changing the entropy
 coefficient, the action sigma, gamma and the GAE truncation handling all left
 the numbers bit-identical.
+
+It does not generalise, and the check is worth recording because the obvious
+inference from the above is wrong. Landing warm-starts the same way and is
+*harmed* by the flag: 94.5% with the normaliser live against 91.0% frozen, same
+seed and recipe, and the live run ends at its peak rather than eroding. What
+decides it is how far PPO's state distribution travels from the clone's.
+Docking's episodes stretch from 342 decisions to 1,500 and spend them far from
+the port, so the running mean is dragged somewhere the policy was never fitted;
+landing's cloned and trained trajectories look much alike, so it barely moves,
+and freezing it only costs the critic a normaliser that tracks the states it
+actually sees. Use `--freeze-norm` where the two distributions diverge, not by
+default.
 
 **`policy_best` overstates by more than was thought.** Its training window
 peaked at 91.0%; those same weights score 75.0% over 200 episodes. Sixteen

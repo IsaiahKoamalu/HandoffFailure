@@ -4,13 +4,15 @@ Ordered roughly by how much they would change what we believe, not by effort.
 
 ## Reinforcement learning
 
-- [ ] **Chase the `base27k` anomaly.** A policy trained at `max_steps` 9,000 and
-      evaluated at 27,000 scores 98.0%. The same recipe *trained* at 27,000
-      scores 92.0%, with real crashes and ditches instead of timeouts. Training
-      on the correct horizon should not be worse. Until this is understood, any
-      conclusion about what PPO can reach here is provisional. First thing to
-      check: episodes and terminal events per 600k steps at each limit — the
-      guess is that a 3x longer clock starves the run of landings to learn from.
+- [x] **Chase the `base27k` anomaly.** It does not reproduce. Re-run as a
+      controlled pair -- one environment, one seed, one recipe, `--max-steps`
+      the only difference, both scored at 27,000 over 200 episodes -- training
+      on the correct horizon wins: **94.5% trained at 27,000 against 92.0%
+      trained at 9,000** (finals 93.5% and 90.5%). The original 98.0% vs 92.0%
+      was measured across two different environments, before the ground fixes
+      and the landmarks, so it was never like for like. One seed each, so the
+      2.5-point margin is suggestive rather than settled -- but the *inversion*
+      is the point, and nothing here needs explaining any more.
 - [ ] **Decide what ships.** `rl/runs/landing/policy.json` was overwritten by a
       training run mid-session rather than chosen. It passes 12/12 in game, but
       `vnorm/policy_best.json` measured 98.0% against its 92.0%. Re-verify the
@@ -26,10 +28,12 @@ Ordered roughly by how much they would change what we believe, not by effort.
 - [ ] **Find out why fine-tuning erodes after iteration ~20.** Both the critic
       fix and warm-start noise fix raised the peak without removing the decay;
       runs give back ten points over the back half. Suspects: learning-rate
-      schedule, `--ent-coef` at 0.003, sustained off-policy drift. Add a fourth,
-      now the likeliest: the drifting observation normaliser, which produced
-      exactly this shape on docking and was not learning at all. Test it by
-      re-running an eroding landing fine-tune with `--freeze-norm`.
+      schedule, `--ent-coef` at 0.003, sustained off-policy drift. Not the
+      observation normaliser: that was the obvious suspect after docking, and
+      freezing it makes landing worse rather than steadier (94.5% live, 91.0%
+      frozen). The fresh 27,000-tick run above did not erode at all -- it ends
+      at its peak -- so the next thing to establish is whether the decay is even
+      still there, or was a property of the pre-rebase 9,000-tick environment.
 - [ ] **Make RL beat the expert, or say plainly that it does not.** It has tied
       or lost in every configuration measured, including under a fuel budget,
       which was supposed to be the case where a learned policy wins. If a fair
@@ -45,14 +49,16 @@ Ordered roughly by how much they would change what we believe, not by effort.
       `collide_penalty` against `dock_bonus`, which redefines the task; that
       experiment is deliberately not run yet.
 
-- [ ] **Re-measure landing now that `--freeze-norm` exists.** Every landing
-      number in this repo was produced with the observation normaliser drifting
-      out from under a warm-started policy (see `rl/README.md`). On docking that
-      was worth eighty points of success rate and it was invisible until `--lr 0`
-      reproduced the collapse with a frozen network. Landing warm-starts the same
-      way, so the shipped policy, the 92%/98% comparison and the `base27k`
-      anomaly below were all measured through it. None of them are safe to reason
-      from until a run with the flag says otherwise.
+- [x] **Re-measure landing now that `--freeze-norm` exists.** Done, and the
+      worry was wrong. Landing is not harmed by the drifting normaliser and is
+      made *worse* by freezing it: 94.5% live against 91.0% frozen, same seed
+      and recipe. Nor does the live run collapse the way docking did -- it ends
+      at its peak. The difference is how far PPO's state distribution moves from
+      the clone's: docking's episodes stretch from 342 decisions to 1,500 and
+      sit far from the port, landing's cloned and trained trajectories look
+      much alike, so the running mean barely moves. `--freeze-norm` is for tasks
+      where those two distributions diverge, not a general fix, and it should
+      stay off by default.
 
 ## Environment
 
