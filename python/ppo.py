@@ -586,14 +586,14 @@ def train(args: argparse.Namespace) -> None:
         if len(recent_outcomes) >= 100 and success_rate > best_rate:
             best_rate = success_rate
             best_step = global_step
-            save(model, normaliser, out_dir, args, env, tag="best")
+            save(model, normaliser, out_dir, args, env, global_step, tag="best")
 
         if iteration % args.save_every == 0 or iteration == iterations:
-            save(model, normaliser, out_dir, args, env)
+            save(model, normaliser, out_dir, args, env, global_step)
 
     log_file.close()
     env.close()
-    save(model, normaliser, out_dir, args, env)
+    save(model, normaliser, out_dir, args, env, global_step)
     if best_rate >= 0.0:
         print(f"best {env.success_name} rate {best_rate:.1%} at step {best_step:,}, "
               f"kept alongside as policy_best.json")
@@ -602,7 +602,7 @@ def train(args: argparse.Namespace) -> None:
 
 def save(
     model: ActorCritic, normaliser: RunningNorm, out_dir: Path, args,
-    env: GodotVecEnv, tag: str = "",
+    env: GodotVecEnv, steps: int, tag: str = "",
 ) -> None:
     suffix = f"_{tag}" if tag else ""
     torch.save(model.state_dict(), out_dir / f"policy{suffix}.pt")
@@ -629,7 +629,12 @@ def save(
         "layers": layers,
         "obs_mean": normaliser.mean.tolist(),
         "obs_std": np.sqrt(normaliser.var + 1e-8).tolist(),
-        "trained_steps": args.steps,
+        # What this policy actually trained for, not what the run was asked
+        # for. It used to record args.steps, so every checkpoint claimed the
+        # full budget: a policy_best saved at iteration 60 of 366 reported
+        # 3,000,000 steps, and two checkpoints from one run were
+        # indistinguishable by it.
+        "trained_steps": steps,
         # Physics ticks each action was held for during training. The in-game
         # autopilot holds for the same number: a policy that learned to act at
         # 10 Hz and is asked to act at 60 will re-decide six times inside one
