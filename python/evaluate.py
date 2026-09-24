@@ -257,6 +257,122 @@ def dock_baseline_controller(obs: np.ndarray) -> np.ndarray:
     return action
 
 
+# Observation layout, mirroring TransferEnv.build_observation.
+T_RADIUS = 0
+T_OFFSET = slice(1, 4)          # ship frame, in surface radii
+T_VELOCITY = slice(4, 7)        # ship frame, relative to the planet
+T_UP = slice(7, 10)             # ship frame, planet centre -> ship
+T_RADIAL = 10
+T_TANGENTIAL = 11
+T_SPEED_RATIO = 12              # speed / circular speed here
+T_ECCENTRICITY = 13
+T_ECCENTRICITY_ = 13
+T_PERIAPSIS = 14                # surface radii
+T_APOAPSIS = 15                 # surface radii
+T_TARGET_OFFSET = 17            # signed, surface radii, + means climb
+T_FUEL = 23
+T_GRAVITY = 24                  # local gravity / 10
+T_PLANET = 25                   # surface radius / 200
+
+# Matching TransferEnv.SPEED_SCALE.
+T_SPEED_SCALE = 60.0
+# Below this total command magnitude the transfer law asks for nothing at all.
+# Not a smoothing epsilon -- it is the difference between a controller that can
+# coast and one that spends its tank holding a correction it has already made.
+DEADBAND = 0.06
+# Target orbit radius in surface radii. Matches TransferEnv.target_radius_factor.
+TARGET_RADIUS = 1.5
+# Velocity-error gain, and how hard the radial component is damped.
+TRANSFER_GAIN = 0.20
+RADIAL_GAIN = 1.0
+
+
+def transfer_baseline_controller(obs: np.ndarray) -> np.ndarray:
+    """Hohmann transfer: set an ellipse that touches the target, coast, circularise.
+
+    The first version of this cancelled radial velocity first, on the reasoning
+    that an orbit has none. That is true and useless as an instruction: thrusting
+    outward against gravity is hovering, and the measured result was a ship that
+    dropped to a ninth of orbital speed and sank at half a unit a second with the
+    engine lit, stranding 96.9% of the time. An orbit is not made by removing
+    motion, it is made by having the right amount of it sideways.
+
+    Three states, decided from the orbital elements rather than latched:
+
+    **Set the ellipse.** Burn tangentially until the orbit's far end touches the
+    target radius. From radius r aiming at rt that wants a tangential speed of
+    ``v_circ * sqrt(2x / (1 + x))`` with ``x = rt / r`` -- below circular to drop,
+    above it to climb.
+
+    **Coast.** Once the ellipse is right, thrust is waste. Fuel burns in
+    proportion to the command every tick it is held, so the ability to ask for
+    nothing is what separates this from the hovering version.
+
+    **Circularise.** Arriving at the target radius, match circular speed there.
+
+    Everything is in the ship's own frame, the frame the commands are in.
+    """
+    n = obs.shape[0]
+    action = np.zeros((n, ACT_SIZE), dtype=np.float32)
+
+    up = obs[:, T_UP]
+    velocity = obs[:, T_VELOCITY] * T_SPEED_SCALE
+    radial = obs[:, T_RADIAL] * T_SPEED_SCALE
+    radius = obs[:, T_RADIUS]                  # in surface radii
+    periapsis = obs[:, T_PERIAPSIS]
+    apoapsis = obs[:, T_APOAPSIS]
+    eccentricity = obs[:, T_ECCENTRICITY]
+
+    # Circular speed here, from the local gravity the observation carries:
+    # g = mu / r^2, so sqrt(g * r) = sqrt(mu / r). Recovered this way because
+    # mu is not in the observation and the speed ratio channel is useless at the
+    # spawns that start nearly at rest.
+    surface = np.maximum(obs[:, T_PLANET] * 200.0, 1.0)
+    r_world = np.maximum(radius * surface, 1.0)
+    gravity = np.maximum(obs[:, T_GRAVITY] * 10.0, 1e-4)
+    v_circ = np.sqrt(gravity * r_world)
+
+    # Tangential direction: what is left once the radial part is removed.
+    tangential = velocity - up * radial[:, None]
+    speed = np.linalg.norm(tangential, axis=1, keepdims=True)
+    fallback = np.cross(up, np.array([0.0, 0.0, 1.0], dtype=np.float32))
+    heading = np.where(
+        speed > 1e-3,
+        tangential / np.maximum(speed, 1e-3),
+        fallback / np.maximum(np.linalg.norm(fallback, axis=1, keepdims=True), 1e-3),
+    )
+
+    x = TARGET_RADIUS / np.maximum(radius, 1e-3)
+    transfer_speed = v_circ * np.sqrt(2.0 * x / (1.0 + x))
+
+    # Which state each agent is in.
+    arrived = np.abs(radius - TARGET_RADIUS) <= 0.12
+    # The far end of the ellipse already touches the target: nothing to do but
+    # wait for it. Descending it is the periapsis that matters, climbing it is
+    # the apoapsis.
+    falling = (radius > TARGET_RADIUS) & (np.abs(periapsis - TARGET_RADIUS) < 0.25)
+    rising = (radius < TARGET_RADIUS) & (np.abs(apoapsis - TARGET_RADIUS) < 0.25)
+    coasting = (falling | rising) & ~arrived
+
+    wanted_speed = np.where(arrived, v_circ, transfer_speed)
+    wanted = heading * wanted_speed[:, None] - up * (radial * RADIAL_GAIN)[:, None]
+    error = wanted - velocity
+    command = np.clip(error * TRANSFER_GAIN, -1.0, 1.0)
+    command = np.where(coasting[:, None], 0.0, command)
+
+    # Coast when the correction is small enough not to be worth the fuel.
+    magnitude = np.linalg.norm(command, axis=1, keepdims=True)
+    command = np.where(magnitude < DEADBAND, 0.0, command)
+    action[:, 0:3] = command
+
+    # Point the nose along the burn so the hull's thrust goes where the command
+    # wants it. Local -Z is the nose.
+    aim = command / np.maximum(np.linalg.norm(command, axis=1, keepdims=True), 1e-3)
+    action[:, 3] = np.clip(aim[:, 1] * 2.0, -1.0, 1.0)
+    action[:, 4] = np.clip(-aim[:, 0] * 2.0, -1.0, 1.0)
+    return np.clip(action, -1.0, 1.0)
+
+
 def expert_for(task: str):
     """The hand-written controller for a task, by name.
 
@@ -270,6 +386,8 @@ def expert_for(task: str):
         return dock_baseline_controller
     if task == "landing":
         return baseline_controller
+    if task == "transfer":
+        return transfer_baseline_controller
     raise SystemExit(f"no hand-written controller for task '{task}'")
 
 

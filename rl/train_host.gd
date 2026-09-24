@@ -204,6 +204,7 @@ func _make_env(name: String) -> ShipTaskEnv:
 	match name:
 		"landing": return LandingEnv.new()
 		"docking": return DockingEnv.new()
+		"transfer": return TransferEnv.new()
 	return null
 
 
