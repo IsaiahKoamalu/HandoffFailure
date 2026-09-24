@@ -120,7 +120,14 @@ const AGENT_LAYER: int = 1 << 9
 ## spawned with.
 @export var spin_weight: float = 0.3
 ## Charged for hitting the hull.
-@export var collide_penalty: float = 40.0
+##
+## 150, not the 40 it started at. At 40 a hull strike cost less than the dock it
+## forfeited was worth, and the trained policy correctly took that trade: it
+## closed in 140 decisions against the hand-written law's 353, saving 25.6 in
+## time charge, and paid about 16 for the ~10pp of extra collisions that bought.
+## 0.10 * (dock_bonus + P) > 25.6 needs P above 136. It is also the realistic
+## statement -- hitting a crewed station is not a third of a successful dock.
+@export var collide_penalty: float = 150.0
 ## Charged for reaching the port face out of tolerance. Smaller than a hull
 ## strike, because it is a better outcome and the ordering is what the policy
 ## learns from.

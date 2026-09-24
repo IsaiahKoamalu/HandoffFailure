@@ -209,10 +209,43 @@ python ppo.py --godot ... --project .. --task docking --out ../rl/runs/docking \
 drift away from the ones the clone was fitted under and the policy is destroyed
 before it learns anything; see "the normaliser is part of the policy" below.
 
-#### It does not beat the baseline, and the way it loses is the interesting part
+#### It ties the baseline, once the reward stops paying for recklessness
 
-3,000,000 steps, warm-started from the baseline. Every number below is 200
-episodes at `--repeat 6`, scored at the distribution mean.
+3,000,000 steps, warm-started from the baseline, `collide_penalty` 150.
+300 episodes at `--repeat 6`, seed 7, same episodes for both, scored at the
+distribution mean.
+
+| | baseline | policy_best | final |
+|---|---|---|---|
+| docked | 82.3% | 81.0% | 76.0% |
+| collided | 10.7% | **8.3%** | **8.0%** |
+| botched | **7.0%** | 10.7% | 16.0% |
+| decisions | 350 | **147** | **148** |
+| mean return | 52.39 | **78.10** | 73.77 |
+
+A tie on the headline metric -- 1.3 points on 300 episodes is about 0.4 sigma --
+with the policy hitting the structure *less* often than the hand-written law and
+docking in 42% of the decisions. Its remaining deficit is botches, the cheaper
+failure.
+
+The first attempt, below, was run at `collide_penalty` 40 and lost by 9 points.
+Raising it to 150 was derived, not tuned: the policy was saving 25.6 of time
+charge by closing in 140 decisions instead of 353, and paying about 16 for the
+~10pp of extra collisions that bought, so `0.10 * (dock_bonus + P) > 25.6` wants
+P above 136. One value, one run. It is also the more honest model -- hitting a
+crewed station should not cost a third of a successful dock.
+
+Worth recording that the penalty does not act the way a knob does. Early in the
+run the policy obeyed it literally -- collisions to 8.5%, baseline level -- and
+paid with botches at 34.5% and a docked rate of 56.5%. Collisions and botches
+are substitutes for most of training, and only after about 200 iterations does
+it find an approach that is both slow enough to arrive in tolerance and direct
+enough to be quick. A run stopped at iteration 180 would have concluded the
+failure rate was structural.
+
+##### The first attempt, at `collide_penalty` 40
+
+200 episodes at `--repeat 6`, scored at the distribution mean.
 
 | | baseline | policy_best | final |
 |---|---|---|---|

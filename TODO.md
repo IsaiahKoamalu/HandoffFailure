@@ -56,14 +56,14 @@ Ordered roughly by how much they would change what we believe, not by effort.
       attempt keeps landing on parity, that is a finding and the README should
       lead with it rather than treating it as unfinished business.
 
-- [x] **Train a docking policy, and see whether it beats the baseline.** Done,
-      and it does not: 75.0% against the baseline's 84.1% over 200 episodes. It
-      wins on the objective it was given -- 19% more return, docking in 40% of
-      the decisions -- and loses the 9 points entirely to hull strikes, because
-      the reward pays twice for closing fast and charges 40 once for hitting the
-      structure. See `rl/README.md`. Beating it on success rate means changing
-      `collide_penalty` against `dock_bonus`, which redefines the task; that
-      experiment is deliberately not run yet.
+- [x] **Train a docking policy, and see whether it beats the baseline.** Done.
+      At `collide_penalty` 40 it lost by 9 points, 75.0% to 84.1%, giving all of
+      it back in hull strikes because the reward paid twice for closing fast and
+      charged 40 once for hitting the structure. At 150 -- derived from that
+      trade, not tuned -- it ties: **81.0% against 82.3% over 300 paired
+      episodes**, about 0.4 sigma, while colliding *less* than the hand-written
+      law (8.3% against 10.7%) and docking in 42% of the decisions. So RL
+      reaches parity here and wins decisively on time. See `rl/README.md`.
 
 - [x] **Re-measure landing now that `--freeze-norm` exists.** Done, and the
       worry was wrong. Landing is not harmed by the drifting normaliser and is
