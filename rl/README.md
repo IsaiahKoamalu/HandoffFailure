@@ -209,6 +209,71 @@ python ppo.py --godot ... --project .. --task docking --out ../rl/runs/docking \
 drift away from the ones the clone was fitted under and the policy is destroyed
 before it learns anything; see "the normaliser is part of the policy" below.
 
+### Orbital transfer
+
+Insertion into a parking orbit: arrive at a planet and be *in orbit* around it,
+on a fuel budget. Success is a state of the two-body problem, not a position --
+periapsis clear of the terrain, apoapsis inside the capture shell, eccentricity
+low, radius near 1.5 surface radii, held long enough that a trajectory merely
+crossing the band does not count.
+
+**This is the one RL wins.** 4,000,000 steps, no warm start, 200 episodes at
+`--repeat 6`, seed 7, same episodes for both:
+
+| | no input | baseline | policy |
+|---|---|---|---|
+| captured | 0.0% | 66.5% | **91.0%** |
+| escaped | 40.6% | 22.0% | **9.0%** |
+| timeout | 0.0% | 11.0% | **0.0%** |
+| decisions | -- | 1218 | **148** |
+| mean return | -172.6 | 42.53 | **141.04** |
+
+24.5 points over the hand-written law, about six sigma on 200 episodes, in an
+eighth of the decisions. Landing and docking both had an analytic controller
+that already solved the task and the question was whether PPO could match it;
+here nothing in the project flies this manoeuvre -- `ShipAutopilot`'s TRANSIT
+phase arrives *at* a body by pure pursuit and stops -- and the learned policy is
+simply better than what a person wrote.
+
+#### Four things that had to be wrong first
+
+All four were measured, and three of them were mine.
+
+**Hovering is not orbiting.** The first hand-written law cancelled radial
+velocity on the reasoning that an orbit has none. True, and useless as an
+instruction: thrusting outward against gravity is hovering. Traced one episode
+and the ship sat at a ninth of orbital speed sinking half a unit a second with
+the engine lit, stranding 96.9% of the time. An orbit is not made by removing
+motion but by having the right amount of it sideways.
+
+**The expert does not clone, and softening it does not help.** The sharp law
+flies at 65.6% and a network regressed onto it scores 0.0%. A version with its
+burn/coast/circularise switches blended into ramps flies at 39.6% and clones to
+1.0%. Weighting the cloning loss toward the frames where the expert is actually
+burning -- this expert coasts through most of a 2,500-decision episode -- also
+gave 1.0%. Action RMS error stayed near 0.2 against landing's 0.08, and a
+persistent fifth-of-full-thrust error wrecks any orbit. The shipped policy is
+trained from scratch; `--warm-start` is not useful on this task.
+
+**The clock made failing deliberately the best move.** The time charge was
+carried over from docking at 0.02 a tick, which over an 18,000-tick episode is
+360 -- more than twice the capture bonus, and more than any single failure. The
+cheapest way to stop paying it was to end the episode early and take a penalty.
+Measured: deliberate stranding climbed to 67% of episodes with captures at zero.
+Now 0.005, so the clock costs 90 and every failure penalty is larger than that.
+
+**And then the tank was still cheaper than the shaping it bought.** Closing from
+a spawn to the target orbit is worth about 48 in shaping; at `fuel_weight` 40 the
+whole tank cost less than that, so the agent burned everything chasing radius and
+eccentricity error and ran dry. This survived the clock fix and a fourfold
+widening of the capture tolerances -- stranding past 70% by iteration 60, three
+times running, captures at zero every time. At 120 the tank costs more than the
+shaping can pay, and fuel is only worth spending on something that ends in a
+capture. The next run reached 85.5% by iteration 60.
+
+That last one is the whole task in miniature. Every earlier fix moved a number
+that was not the binding constraint, and the run looked identical each time.
+
 #### It ties the baseline, once the reward stops paying for recklessness
 
 3,000,000 steps, warm-started from the baseline, `collide_penalty` 150.

@@ -4,6 +4,14 @@ Ordered roughly by how much they would change what we believe, not by effort.
 
 ## Reinforcement learning
 
+- [ ] **Re-tighten the transfer capture tolerances.** They were widened
+      fourfold (radius +-40%, eccentricity 0.35, hold 0.5s) to test whether the
+      capture condition was too narrow to discover. It was not -- the binding
+      constraint was `fuel_weight` -- so the widening is an untested leftover
+      rather than a decision. Put them back to +-15% / 0.1 / 2s and re-measure
+      both controllers; the policy may well still win, and the number means more
+      at a tolerance that says "parking orbit" rather than "roughly there".
+
 - [x] **Chase the `base27k` anomaly.** It does not reproduce. Re-run as a
       controlled pair -- one environment, one seed, one recipe, `--max-steps`
       the only difference, both scored at 27,000 over 200 episodes -- training
@@ -50,11 +58,24 @@ Ordered roughly by how much they would change what we believe, not by effort.
       frozen). The fresh 27,000-tick run above did not erode at all -- it ends
       at its peak -- so the next thing to establish is whether the decay is even
       still there, or was a property of the pre-rebase 9,000-tick environment.
-- [ ] **Make RL beat the expert, or say plainly that it does not.** It has tied
-      or lost in every configuration measured, including under a fuel budget,
-      which was supposed to be the case where a learned policy wins. If a fair
-      attempt keeps landing on parity, that is a finding and the README should
-      lead with it rather than treating it as unfinished business.
+- [x] **Make RL beat the expert, or say plainly that it does not.** It does,
+      on orbital transfer: **91.0% against 66.5%** over 200 paired episodes,
+      about six sigma, in an eighth of the decisions. Landing and docking are
+      parity at best, and the difference is not the algorithm -- it is that both
+      of those already had an analytic controller that solved the task, and
+      nothing in this project flies an orbit insertion. Where the hand-written
+      law is good, PPO matches it; where there isn't one, PPO is better than
+      what a person wrote. See `rl/README.md`.
+
+- [ ] **`--warm-start` does not work on orbital transfer, and it should be
+      understood why.** The law flies at 65.6% and clones to 0.0%; a smoothed
+      version flies at 39.6% and clones to 1.0%; weighting the loss toward the
+      frames where the expert burns also gives 1.0%. Action RMS error stays near
+      0.2 against landing's 0.08. The shipped policy is trained from scratch, so
+      nothing is blocked, but an expert that cannot be imitated at all is worth
+      understanding before a fourth task needs one. First guess: the expert
+      coasts through most of a 2,500-decision episode, so the burns are a small
+      and impulsive fraction of the data.
 
 - [x] **Train a docking policy, and see whether it beats the baseline.** Done.
       At `collide_penalty` 40 it lost by 9 points, 75.0% to 84.1%, giving all of
