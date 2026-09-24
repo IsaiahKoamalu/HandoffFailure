@@ -166,11 +166,16 @@ func outcome_names() -> Dictionary:
 ## precondition. A task states its own requirements.
 func _bind_world() -> bool:
 	for planet in SolarSystem.Instance.Planets:
-		if planet.terrain_enabled:
+		if planet.terrain_enabled and world_allowed(planet.name):
 			_landable.append(planet)
 	if _landable.is_empty():
-		push_error("No planet in main.tscn has terrain_enabled; nothing to land on.")
+		push_error("No planet in main.tscn has terrain_enabled and is allowed by "
+			+ "--planets/--holdout; nothing to land on.")
 		return false
+	var chosen := PackedStringArray()
+	for planet in _landable:
+		chosen.append(planet.name)
+	print("[landing] worlds: %s" % ", ".join(chosen))
 	targets.resize(num_agents)
 	return true
 

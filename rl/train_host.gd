@@ -81,6 +81,15 @@ const PLAYER_ONLY := ["HUD", "Ship", "Astronaut"]
 ## Which task to serve. The host owns the socket and the clock and nothing
 ## else; the task owns the observation, the reward and what ends an episode.
 @export var task: String = "landing"
+## Which worlds a task may use, as comma-separated node names. Empty means all
+## of them. `holdout` is the complement: every world except these.
+##
+## Both exist so that training and evaluation can be told to use *different*
+## worlds. Without that, a policy is trained and scored on the same terrain
+## seeds and nothing in the number distinguishes generalisation from having
+## memorised three planets.
+@export var planets: String = ""
+@export var holdout: String = ""
 
 var _env: ShipTaskEnv
 # Cached off the task once, because they are read several times per agent per
@@ -140,6 +149,10 @@ func _ready() -> void:
 	_env.flight_assist = assist
 	_env.visible_agents = render
 	_env.fuel_seconds = fuel_seconds
+	if not planets.is_empty():
+		_env.allow_worlds = planets.split(",", false)
+	if not holdout.is_empty():
+		_env.deny_worlds = holdout.split(",", false)
 	# An explicit --max-steps wins; otherwise the task says how long its own
 	# episodes should be.
 	_env.max_steps = max_steps if max_steps > 0 else _env.default_max_steps()
@@ -211,6 +224,8 @@ func _parse_arguments() -> void:
 			"--repeat": repeat = maxi(1, int(pair[1]))
 			"--max-steps": max_steps = int(pair[1])
 			"--fuel": fuel_seconds = float(pair[1])
+			"--planets": planets = pair[1]
+			"--holdout": holdout = pair[1]
 
 
 func _wait_for_client() -> void:

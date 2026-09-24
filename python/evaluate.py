@@ -415,6 +415,10 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=11040)
     parser.add_argument("--seed", type=int, default=1234)
     parser.add_argument("--max-ticks", type=int, default=20000)
+    parser.add_argument("--planets", default="",
+                        help="comma-separated world names to score on. Empty is "
+                             "all of them.")
+    parser.add_argument("--holdout", default="", help="world names to exclude.")
     parser.add_argument("--fuel", type=float, default=0.0,
                         help="seconds of full thrust per episode. 0 is unlimited.")
     parser.add_argument("--max-steps", type=int, default=0,
@@ -446,6 +450,7 @@ def main() -> None:
         args.godot, args.project, num_agents=args.agents, port=args.port,
         seed=args.seed, repeat=args.repeat, max_steps=args.max_steps,
         fuel_seconds=args.fuel, task=args.task,
+        planets=args.planets, holdout=args.holdout,
     ) as env:
         if isinstance(controller, PolicyController):
             if controller.task != env.task:

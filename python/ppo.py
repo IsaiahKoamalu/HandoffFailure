@@ -283,6 +283,8 @@ def train(args: argparse.Namespace) -> None:
         repeat=args.repeat,
         fuel_seconds=args.fuel,
         max_steps=args.max_steps,
+        planets=args.planets,
+        holdout=args.holdout,
         # A rendered run is paced by the engine rather than by this side, so
         # a rollout takes far longer in wall-clock terms without anything
         # being wrong. The watchdog has to allow for that.
@@ -694,6 +696,15 @@ def parse_args() -> argparse.Namespace:
                              "base27k comparison -- train short and score long, "
                              "against train long and score long -- impossible to "
                              "re-run, which is why it is still open.")
+    parser.add_argument("--planets", default="",
+                        help="comma-separated world names to train on. Empty is "
+                             "all of them.")
+    parser.add_argument("--holdout", default="",
+                        help="comma-separated world names to keep OUT of "
+                             "training, so they can be scored on separately. "
+                             "Trained and evaluated on the same terrain seeds, a "
+                             "landing rate cannot tell generalisation from "
+                             "memorising three planets.")
     parser.add_argument("--freeze-norm", action="store_true",
                         help="stop updating the observation normaliser once the "
                              "warm start is over. The statistics a cloned policy "

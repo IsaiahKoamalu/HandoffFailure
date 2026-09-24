@@ -125,6 +125,24 @@ func success_outcome() -> int:
 	return 1
 
 
+## Worlds this run may use, by node name. Empty allows everything.
+var allow_worlds: PackedStringArray = []
+## Worlds this run may not use. Applied after `allow_worlds`.
+var deny_worlds: PackedStringArray = []
+
+
+## Whether a world is in play for this run.
+##
+## The point is to let training and evaluation be pointed at *different* worlds.
+## Scored on the same terrain seeds it trained on, a policy's number cannot
+## distinguish generalisation from having memorised three planets, and every
+## landing figure in this repo was produced that way.
+func world_allowed(world_name: String) -> bool:
+	if not allow_worlds.is_empty() and not allow_worlds.has(world_name):
+		return false
+	return not deny_worlds.has(world_name)
+
+
 # --- Setup -------------------------------------------------------------------
 
 ## Build the agent pool and start every episode. False means the task could not

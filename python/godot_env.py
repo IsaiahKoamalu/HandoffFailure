@@ -65,6 +65,8 @@ class GodotVecEnv:
         repeat: int = 1,
         fuel_seconds: float = 0.0,
         max_steps: int = 0,
+        planets: str = "",
+        holdout: str = "",
         task: str = "landing",
     ) -> None:
         self.num_agents = num_agents
@@ -113,6 +115,8 @@ class GodotVecEnv:
                 f"--repeat={repeat}",
                 f"--fuel={fuel_seconds}",
                 f"--max-steps={max_steps}",
+                f"--planets={planets}",
+                f"--holdout={holdout}",
             ]
             self._process = subprocess.Popen(
                 command,

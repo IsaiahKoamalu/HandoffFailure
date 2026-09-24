@@ -87,9 +87,20 @@ Ordered roughly by how much they would change what we believe, not by effort.
       slope creeps (see below), so "landed" and "landed somewhere useful" are
       not yet the same thing. `Planet` already samples terrain, and
       `rl/terrain_report.tscn` already measures slope.
-- [ ] **Hold out a planet.** All training and all evaluation happen on the same
-      three terrain seeds, so nothing distinguishes a policy that generalises
-      from one that memorised. Train on two, score on the third.
+- [x] **Hold out a planet.** Done, and the answer is that it generalises.
+      `--holdout=` on ppo.py and `--planets=` on evaluate.py select which worlds
+      a run may use, so training and scoring can be pointed at different terrain.
+      Trained with Planet3 held out, 300 paired episodes each:
+
+          policy    95.0% trained -> 75.0% held out  (-20.0)
+          baseline  95.7% trained -> 76.8% held out  (-18.9)
+
+      The baseline reads landness and cannot memorise anything, and it drops by
+      the same amount, so the gap is Planet3 being hard rather than the policy
+      having learned three maps. Their failure modes are opposites, which is the
+      more interesting half: on the hard world the baseline flies on looking for
+      ground until the clock runs out (23.7% timeout, 0.3% ditched) and the
+      policy commits and lands in water (24.0% ditched, 0% timeout).
 - [ ] **Touchdown is analytic, never collided.** Episodes end when altitude
       reaches zero against `Planet.get_surface_radius_at`. The agent has never
       touched a collision mesh, and is never scored on staying upright after it
