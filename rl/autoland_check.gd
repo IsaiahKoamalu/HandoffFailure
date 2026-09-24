@@ -41,6 +41,20 @@ func _ready() -> void:
 			_planet = planet
 			break
 
+	# Which policy is on trial. Without this the check could only ever score the
+	# installed one, so a candidate had to be swapped in before it could be
+	# tested -- the wrong way round for the question being asked.
+	var policy := ""
+	for argument in OS.get_cmdline_user_args():
+		if argument.begins_with("--policy="):
+			policy = argument.substr("--policy=".length())
+	if not policy.is_empty():
+		if _ship.autopilot == null or not _ship.autopilot.use_policy(policy):
+			print("RESULT no_policy (%s)" % policy)
+			get_tree().quit(1)
+			return
+		print("policy: %s" % policy)
+
 	if _ship.autopilot == null or not _ship.autopilot.is_available:
 		print("RESULT no_policy")
 		get_tree().quit(1)

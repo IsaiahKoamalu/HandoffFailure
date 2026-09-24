@@ -200,6 +200,21 @@ func _ready() -> void:
 	status = "ready" if is_available else "no policy (see rl/README.md)"
 
 
+## Fly a different network from here on. False leaves the current one in place.
+##
+## Exists for rl/autoland_check.tscn, which has to score a *candidate* before it
+## is installed: "re-verify the candidate in game before swapping" cannot be
+## done by a check that can only ever load the policy already shipped.
+func use_policy(path: String) -> bool:
+	var pilot := NeuralPilot.load_from(path)
+	if pilot == null:
+		return false
+	_pilot = pilot
+	is_available = true
+	status = "ready"
+	return true
+
+
 ## Where to fly: the navigation target if one is set, otherwise the planet
 ## underneath. Tab cycles the target, so "go there" is already a thing the
 ## player can say without a new control.

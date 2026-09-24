@@ -13,11 +13,27 @@ Ordered roughly by how much they would change what we believe, not by effort.
       and the landmarks, so it was never like for like. One seed each, so the
       2.5-point margin is suggestive rather than settled -- but the *inversion*
       is the point, and nothing here needs explaining any more.
-- [ ] **Decide what ships.** `rl/runs/landing/policy.json` was overwritten by a
-      training run mid-session rather than chosen. It passes 12/12 in game, but
-      `vnorm/policy_best.json` measured 98.0% against its 92.0%. Re-verify the
-      candidate in game (`res://rl/autoland_check.tscn`) and `verify_pilot.py`
-      before swapping, and record *why* in `rl/runs/README.md`.
+- [x] **Decide what ships.** Done. `rl/runs/landing/policy.json` is now
+      `base27k-refit/policy_best.json`, chosen rather than left where a training
+      run happened to put it, and the predecessor is kept as `landing-prev/` so
+      the comparison can be repeated. It wins on every axis but truncation --
+      92.5% against 88.5% over 400 paired episodes, fewer crashes and ditches,
+      and a gentler touchdown -- with the same 4.0-point margin in an
+      independent 200-episode sample. Verified before installing: 12/12 in game,
+      numpy and GDScript agree to 4.81e-07. Written up in `rl/runs/README.md`.
+
+      The `vnorm` 98.0% that this item was waiting on is not a real comparison:
+      it and the 92.0% were measured in different environments. The predecessor
+      scores 88.5% today.
+
+- [ ] **Neither in-game check could test an uninstalled policy, and that is
+      fixed but worth remembering.** `verify_pilot.py` passed `--policy-path` to
+      the numpy side only, so the engine loaded its own default and every
+      candidate was compared against the shipped one -- a candidate that is fine
+      reports a 0.91 disagreement. `autoland_check` had no policy argument at
+      all. Both now take `-- --policy=<path>`. The general shape is worth
+      watching for: a verification tool that silently verifies the wrong thing
+      passes and fails for reasons that have nothing to do with what was asked.
 - [ ] **Stop `policy_best.json` selecting on noise.** It takes the best of ~73
       rolling-window landing rates that carry ~1.9% binomial noise each, so it
       overstates by two or three points. Measured on docking, where the run was

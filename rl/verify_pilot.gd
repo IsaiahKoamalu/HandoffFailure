@@ -9,7 +9,16 @@ extends SceneTree
 ## six plausible numbers in [-1, 1], and the ship still flies, just badly. The
 ## only way to know they agree is to make them answer the same question.
 ##
-##     Godot.exe --headless --path . --script res://rl/verify_pilot.gd
+##     Godot.exe --headless --path . --script res://rl/verify_pilot.gd \
+##         -- --policy=res://rl/runs/landing/policy.json
+##
+## The policy is named on the command line because the point is to verify *a*
+## candidate, not whichever one happens to be installed. This script used to
+## call load_from() bare while python/verify_pilot.py passed --policy-path to
+## the numpy side only, so the two halves read different files: verifying any
+## policy other than the shipped one compared it against the shipped one and
+## reported a disagreement of 0.91 that was entirely an artefact. Omitting the
+## argument still falls back to NeuralPilot's default.
 
 const PROBES: Array = [
 	[0.20, 0.90, 0.10, -0.30, 0.05, 0.10, 0.95, -0.20, -0.15, 0.08, 1.00, 0.50, 0.30, 0.00, 0.62, 0.10, 0.05, 0.99, 0.35, 0.85],
@@ -19,7 +28,13 @@ const PROBES: Array = [
 
 
 func _initialize() -> void:
-	var pilot := NeuralPilot.load_from()
+	var path := NeuralPilot.DEFAULT_PATH
+	for argument in OS.get_cmdline_user_args():
+		if argument.begins_with("--policy="):
+			path = argument.substr("--policy=".length())
+	print("policy=%s" % path)
+
+	var pilot := NeuralPilot.load_from(path)
 	if pilot == null:
 		print("NO_POLICY")
 		quit(1)

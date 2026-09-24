@@ -42,8 +42,13 @@ def main() -> int:
     parser.add_argument("--tolerance", type=float, default=2e-4)
     args = parser.parse_args()
 
+    # Both halves must read the same file. Passing the path only to the numpy
+    # side left the engine loading its own default, so every candidate was
+    # silently compared against the installed policy -- see verify_pilot.gd.
+    policy = Path(args.policy_path).resolve()
     result = subprocess.run(
-        [args.godot, "--headless", "--path", args.project, "--script", "res://rl/verify_pilot.gd"],
+        [args.godot, "--headless", "--path", args.project,
+         "--script", "res://rl/verify_pilot.gd", "--", f"--policy={policy}"],
         capture_output=True,
         text=True,
         timeout=180,
