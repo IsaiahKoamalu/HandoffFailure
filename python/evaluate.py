@@ -373,7 +373,124 @@ def transfer_baseline_controller(obs: np.ndarray) -> np.ndarray:
     return np.clip(action, -1.0, 1.0)
 
 
-def expert_for(task: str):
+def transfer_clone_controller(obs: np.ndarray) -> np.ndarray:
+    """The transfer law again, with its switches blended into ramps.
+
+    Exists only to be imitated. `transfer_baseline_controller` is the better
+    controller -- 65.6% against this one's 39.6% -- and clones to nothing:
+    a network regressed onto it scored 0.0%, because least squares cannot
+    represent the burn/coast/circularise switches and fits a smear that
+    never truly coasts and never truly settles. Softening them costs this
+    controller 26 points and gives the regression something it can be.
+
+    The scoring baseline and the cloning target are therefore two different
+    functions, which is worth stating plainly: the bar a policy has to clear
+    is the sharp law, and the warm start it gets is the soft one.
+
+    Original description follows.
+
+    Hohmann transfer: set an ellipse that touches the target, coast, circularise.
+
+    The first version of this cancelled radial velocity first, on the reasoning
+    that an orbit has none. That is true and useless as an instruction: thrusting
+    outward against gravity is hovering, and the measured result was a ship that
+    dropped to a ninth of orbital speed and sank at half a unit a second with the
+    engine lit, stranding 96.9% of the time. An orbit is not made by removing
+    motion, it is made by having the right amount of it sideways.
+
+    Three states, decided from the orbital elements rather than latched:
+
+    **Set the ellipse.** Burn tangentially until the orbit's far end touches the
+    target radius. From radius r aiming at rt that wants a tangential speed of
+    ``v_circ * sqrt(2x / (1 + x))`` with ``x = rt / r`` -- below circular to drop,
+    above it to climb.
+
+    **Coast.** Once the ellipse is right, thrust is waste. Fuel burns in
+    proportion to the command every tick it is held, so the ability to ask for
+    nothing is what separates this from the hovering version.
+
+    **Circularise.** Arriving at the target radius, match circular speed there.
+
+    Everything is in the ship's own frame, the frame the commands are in.
+    """
+    n = obs.shape[0]
+    action = np.zeros((n, ACT_SIZE), dtype=np.float32)
+
+    up = obs[:, T_UP]
+    velocity = obs[:, T_VELOCITY] * T_SPEED_SCALE
+    radial = obs[:, T_RADIAL] * T_SPEED_SCALE
+    radius = obs[:, T_RADIUS]                  # in surface radii
+    periapsis = obs[:, T_PERIAPSIS]
+    apoapsis = obs[:, T_APOAPSIS]
+    eccentricity = obs[:, T_ECCENTRICITY]
+
+    # Circular speed here, from the local gravity the observation carries:
+    # g = mu / r^2, so sqrt(g * r) = sqrt(mu / r). Recovered this way because
+    # mu is not in the observation and the speed ratio channel is useless at the
+    # spawns that start nearly at rest.
+    surface = np.maximum(obs[:, T_PLANET] * 200.0, 1.0)
+    r_world = np.maximum(radius * surface, 1.0)
+    gravity = np.maximum(obs[:, T_GRAVITY] * 10.0, 1e-4)
+    v_circ = np.sqrt(gravity * r_world)
+
+    # Tangential direction: what is left once the radial part is removed.
+    tangential = velocity - up * radial[:, None]
+    speed = np.linalg.norm(tangential, axis=1, keepdims=True)
+    fallback = np.cross(up, np.array([0.0, 0.0, 1.0], dtype=np.float32))
+    heading = np.where(
+        speed > 1e-3,
+        tangential / np.maximum(speed, 1e-3),
+        fallback / np.maximum(np.linalg.norm(fallback, axis=1, keepdims=True), 1e-3),
+    )
+
+    x = TARGET_RADIUS / np.maximum(radius, 1e-3)
+    transfer_speed = v_circ * np.sqrt(2.0 * x / (1.0 + x))
+
+    # The three states are blended, not switched, and that is not a detail.
+    # Written with hard boundaries this law flies the task perfectly well and
+    # clones to nothing: measured, 65.6% for the controller and 0.0% for a
+    # network regressed onto it. Least squares cannot represent a step, so it
+    # fits a smeared version that never truly coasts and never truly settles,
+    # and every episode runs out the clock. The landing baseline above learned
+    # the same lesson at `ready`; the fix is to make the expert itself
+    # something a smooth function can be.
+
+    # Arrival, as a quantity: 1 at the target radius, 0 by a third of a radius
+    # away. Decides how much of the wanted speed is circular rather than
+    # transfer.
+    arrived = np.clip(1.0 - np.abs(radius - TARGET_RADIUS) / 0.16, 0.0, 1.0)
+    wanted_speed = v_circ * arrived + transfer_speed * (1.0 - arrived)
+
+    # Coasting, as a quantity: how nearly the far end of the ellipse already
+    # touches the target. Descending it is the periapsis that matters, climbing
+    # it is the apoapsis.
+    on_descent = np.clip(1.0 - np.abs(periapsis - TARGET_RADIUS) / 0.50, 0.0, 1.0)
+    on_ascent = np.clip(1.0 - np.abs(apoapsis - TARGET_RADIUS) / 0.50, 0.0, 1.0)
+    below = np.clip((radius - TARGET_RADIUS) / 0.10, 0.0, 1.0)
+    coast = np.maximum(on_descent * below, on_ascent * (1.0 - below))
+    # Never coast once at the target: that is where the circularising burn is.
+    coast = coast * (1.0 - arrived)
+
+    wanted = heading * wanted_speed[:, None] - up * (radial * RADIAL_GAIN)[:, None]
+    error = wanted - velocity
+    command = np.clip(error * TRANSFER_GAIN, -1.0, 1.0) * (1.0 - coast)[:, None]
+
+    # A soft floor rather than a cliff, for the same reason. Commands below the
+    # deadband fade out instead of vanishing, so the function stays continuous
+    # where a policy has to learn it.
+    magnitude = np.linalg.norm(command, axis=1, keepdims=True)
+    command = command * np.clip((magnitude - DEADBAND) / DEADBAND, 0.0, 1.0)
+    action[:, 0:3] = command
+
+    # Point the nose along the burn so the hull's thrust goes where the command
+    # wants it. Local -Z is the nose.
+    aim = command / np.maximum(np.linalg.norm(command, axis=1, keepdims=True), 1e-3)
+    action[:, 3] = np.clip(aim[:, 1] * 2.0, -1.0, 1.0)
+    action[:, 4] = np.clip(-aim[:, 0] * 2.0, -1.0, 1.0)
+    return np.clip(action, -1.0, 1.0)
+
+
+def expert_for(task: str, for_cloning: bool = False):
     """The hand-written controller for a task, by name.
 
     One dispatch, used by both the scorer and ppo's warm start. Written out
@@ -387,7 +504,8 @@ def expert_for(task: str):
     if task == "landing":
         return baseline_controller
     if task == "transfer":
-        return transfer_baseline_controller
+        # Two different functions on purpose; see transfer_clone_controller.
+        return transfer_clone_controller if for_cloning else transfer_baseline_controller
     raise SystemExit(f"no hand-written controller for task '{task}'")
 
 

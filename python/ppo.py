@@ -206,7 +206,7 @@ def behaviour_clone(
     # Whose actions are being fitted. Defaulting to the landing law would put
     # the old bug back for any caller that forgets, so there is no default.
     if expert is None:
-        expert_fn = expert_for(env.task)
+        expert_fn = expert_for(env.task, for_cloning=True)
     else:
         expert_fn = expert
 
@@ -323,7 +323,8 @@ def train(args: argparse.Namespace) -> None:
             f"for {args.warm_start} ticks", flush=True)
         raw_obs = behaviour_clone(
             env, model, normaliser, args.warm_start, args.clone_epochs,
-            args.clone_lr, args.dagger_rounds, expert_for(env.task),
+            args.clone_lr, args.dagger_rounds,
+            expert_for(env.task, for_cloning=True),
         )
     else:
         raw_obs = env.reset()
