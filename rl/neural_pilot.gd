@@ -104,7 +104,7 @@ func _adopt(data: Dictionary) -> bool:
 		# A channel that never moved is treated as unit scale rather than as
 		# something to divide by. CONSTANT_STD is not an epsilon guarding a
 		# divide by zero: it is a decision about what counts as constant, and it
-		# has to match python/ppo.py's, which verify_pilot checks.
+		# has to match the trainer's, which the verification check confirms.
 		#
 		# A standard deviation a thousandth of a channel's own range means it
 		# never varied. Measured: this policy's fuel channel has obs_std 1.0e-4,

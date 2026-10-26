@@ -5,3 +5,7 @@
 
 # Local Python environment for the RL trainer (rl/README.md).
 .venv/
+
+# Python
+__pycache__/
+*.pyc

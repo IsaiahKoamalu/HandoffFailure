@@ -1,0 +1,361 @@
+% Research proposal, formatted to match CS498-researchProposal.pdf
+%
+% Self-contained: compiles with pdflatex and needs no external style file. If
+% you have the NeurIPS style you used before, swap the preamble for
+% \usepackage[final]{neurips_2024} and delete the manual title block below.
+
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{microtype}
+\usepackage{times}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{url}
+\usepackage[hidelinks]{hyperref}
+\usepackage{titlesec}
+
+\titleformat{\section}{\large\bfseries}{\thesection}{0.8em}{}
+\titlespacing*{\section}{0pt}{1.4em}{0.5em}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.55em}
+
+\renewcommand{\abstractname}{Abstract}
+
+\title{\textbf{Measuring Handoff Failure Between Independently\\ Trained Reinforcement Learning Skills}}
+\author{%
+  Isaiah Broderson\\
+  University of Hawai\kern0.05em'\kern-0.05em i at Hilo\\
+  \texttt{isaiahkb@hawaii.edu}
+}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+Long-horizon control problems are rarely solved by a single reinforcement learning
+policy. The standard approach is to train narrow skills separately and execute them
+in sequence, which replaces one hard credit-assignment problem with a set of easy
+ones. This decomposition introduces a failure mode that is seldom measured directly:
+each skill is trained on its own distribution of starting states, but when chained it
+receives whatever state its predecessor produced. In this project I will train two
+spacecraft control skills independently inside an existing physics simulator, chain
+them into a single mission, and measure both the loss in mission success and the
+distributional distance between the delivered handoff state and the successor's
+training distribution. The central claim to be tested is that the second quantity
+predicts the first. The reinforcement learning implementation, including Proximal
+Policy Optimization, the task definitions, the policy sequencer and the evaluation
+harness, will be written for this project; the simulator predates it and is treated
+as fixed apparatus.
+\end{abstract}
+
+\section{Introduction}
+
+Reinforcement learning works by assigning credit to actions from the reward they
+eventually produce. That mechanism degrades as the horizon grows. A spacecraft
+mission that begins in orbit around one body and ends on the surface of another
+spans tens of thousands of simulation steps, and a single terminal reward gives the
+agent almost no information about which of those decisions mattered. The action
+spaces are not even consistent across the mission: moving a character and flying a
+six-degree-of-freedom spacecraft are different control problems joined end to end.
+
+The usual response is temporal abstraction. Rather than learning the whole mission,
+the designer decomposes it into skills, trains each against a dense and local reward,
+and executes them in sequence. Each skill then faces a tractable problem, and the
+resulting system can be inspected one component at a time.
+
+This decomposition carries an assumption that is rarely stated and even more rarely
+measured. Each skill is trained on a distribution of starting states chosen by the
+designer. When the skills are chained, a skill no longer receives a sampled starting
+state; it receives whatever state the preceding skill happened to leave the system in.
+If those two distributions disagree, a skill that is individually reliable can fail in
+composition without anything being wrong with the skill itself. The failure belongs to
+the seam, not to either component.
+
+The analogy is a relay race. Two fast runners do not guarantee a fast relay, because
+the baton exchange is its own skill and neither runner practised it.
+
+This project treats that seam as the object of study rather than as an engineering
+inconvenience. I will train two control skills independently, chain them, and ask two
+questions. First, how much mission success is lost relative to what the individual
+success rates predict. Second, whether that loss is explained by a direct measurement
+of how far the delivered handoff state falls outside the successor's training
+distribution. The second question is the contribution; the first merely establishes
+that there is something to explain.
+
+The formal claim to be tested is stated so that it remains informative in either
+direction: \emph{mission outcome at a skill handoff is predicted by the overlap
+between the delivered state and the successor's training distribution.} If the chain
+degrades, the measurement should localise and explain the degradation. If the chain
+holds, the measurement should show that the handoff states remained inside the
+distribution the successor already knew.
+
+\section{Prior Work}
+
+Temporal abstraction in reinforcement learning is usually formalised through the
+options framework of Sutton, Precup and Singh \cite{sutton1999}, which extends the
+Markov decision process to temporally extended actions with their own initiation
+sets and termination conditions. An option's initiation set is precisely the
+statement that a skill is only valid from certain states, which makes the question
+of this project a question about whether initiation sets are respected in practice
+when skills are trained independently rather than jointly. Later work learns the
+decomposition rather than specifying it: the option-critic architecture of Bacon,
+Harb and Precup \cite{bacon2017} learns options and their terminations end to end,
+and Nachum et al.~\cite{nachum2018} train a higher-level policy that issues goals to
+a lower-level one. Both approaches avoid the handoff problem by training the levels
+together. This project deliberately keeps the skills independent, because
+independently trained skills are the common engineering practice and the case where
+the seam is exposed.
+
+The underlying mechanism is covariate shift under a changing state distribution,
+which is the same phenomenon that motivates DAgger \cite{ross2011}. There, a policy
+cloned from expert demonstrations drifts into states the expert never visited and has
+been taught nothing about; the remedy is to collect labels on the states the learner
+itself reaches. The structure is identical at a skill handoff, with the predecessor
+skill in the role of the thing that produces unfamiliar states, and one of the repairs
+proposed below is DAgger applied to the seam rather than to an expert. Domain
+randomisation \cite{tobin2017} attacks the same problem from the other side by
+widening the training distribution until the deployment distribution falls inside it,
+and supplies a second repair to compare against.
+
+The learning algorithm itself is Proximal Policy Optimization \cite{schulman2017},
+chosen for stability and for being simple enough to implement correctly from the
+paper. Reward shaping follows the potential-based form of Ng, Harada and Russell
+\cite{ng1999}, which guarantees that shaping cannot change the optimal policy, a
+property that matters here because each skill's reward must be dense enough to train
+on without altering what the skill is actually optimising.
+
+What I have not found is direct measurement of the handoff state distribution as a
+predictor of composed-system failure. The hierarchical literature largely avoids the
+problem by training jointly, and the imitation literature studies distribution shift
+between a learner and an expert rather than between two learned skills. That gap is
+what this project addresses.
+
+\section{Data}
+
+The data source is a spacecraft simulator built in Godot 4 that predates this project
+and is treated as fixed apparatus. No feature work on the simulator is in scope, and
+the distinction is stated explicitly so that the contribution being graded is
+unambiguous.
+
+The simulator provides analytically propagated planetary orbits, procedurally
+generated terrain derived from a per-planet seed, and a rigid-body ship with
+six-degree-of-freedom thrust, a finite fuel budget and real gravitational dynamics.
+Because the ship obeys gravity while the planets are on rails, the ship's trajectory
+is a genuine orbital mechanics problem: orbital elements such as periapsis, apoapsis
+and eccentricity are computed from position and velocity rather than scripted.
+
+Data is generated rather than collected. Episodes are produced by stepping 32 ships in
+parallel under a headless build, which reaches roughly 5{,}000 environment steps per
+second on a laptop CPU, so a three-million-step training run completes in well under
+an hour and no GPU is required. One decision is held for six physics ticks, which
+places a full episode inside the discount horizon. The experiments below consume on
+the order of forty training runs and evaluation sweeps, which is comfortably within a
+single machine's budget over four weeks.
+
+Five planets are available, differing in radius, surface gravity and terrain seed.
+One is held out of training throughout so that any generalisation claim can be tested
+on terrain no policy has seen.
+
+\section{Models}
+
+\textbf{Learning algorithm.} An actor--critic implementation of Proximal Policy
+Optimization \cite{schulman2017} written for this project: a clipped surrogate
+objective, generalised advantage estimation, separate policy and value heads over a
+small fully connected trunk, and running normalisation of the observation vector. The
+normaliser's statistics are stored with the exported policy, because they form part of
+the policy's definition and are also the instrument used to measure the handoff in
+Section~5.
+
+\textbf{Skills.} Two policies are trained independently.
+
+\emph{Orbit insertion} takes a ship approaching a planet on an arbitrary trajectory
+and places it in a parking orbit. Success is defined by orbital elements rather than
+position: periapsis clear of the terrain, apoapsis inside the planet's capture shell,
+eccentricity below a threshold, orbital radius within tolerance of a target, and the
+whole condition held long enough that a trajectory merely crossing the band does not
+count. Fuel is finite, so the skill is a constrained problem rather than a free one.
+
+\emph{Descent and landing} takes a ship in orbit and lands it intact on a designated
+continent, scored on touchdown speed, attitude and whether the landing site is on land.
+
+\textbf{Mission runner.} The component that makes the composition possible, and the
+main piece of new engineering. The two skills do not currently share an interface: they
+use observation vectors of different width, they disagree about whether the ship's
+flight-assist system should be active, and they assume different fuel regimes and
+episode horizons. Table~\ref{tab:mismatch} lists the differences. The runner holds the
+ship's state across the transition, swaps the active observation builder and policy,
+reconfigures the ship, and decides when the handover occurs.
+
+\begin{table}[h]
+\centering
+\caption{Interface mismatch between the two skills.}
+\label{tab:mismatch}
+\begin{tabular}{lll}
+\toprule
+\textbf{Property} & \textbf{Orbit insertion} & \textbf{Descent and landing} \\
+\midrule
+Observation width & 26 channels & 20 channels \\
+Flight assist & Off (it cancels orbital velocity) & On \\
+Fuel & Finite budget & Unlimited \\
+Episode horizon & 18{,}000 ticks & 27{,}000 ticks \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Baselines.} Each skill is also implemented as a hand-written analytic
+controller. These serve two purposes: they establish what the task is worth without
+learning, and they provide a control that cannot memorise terrain, which is needed to
+interpret any generalisation result.
+
+\section{Experiments}
+
+\textbf{E1: skills in isolation.} Each policy evaluated alone, five random seeds,
+200 episodes per seed, actions taken at the distribution mean with exploration noise
+disabled. This establishes the reference rates the chain is compared against. The
+hand-written controller and a no-input control are scored on the same episodes.
+
+\textbf{E2: the chained mission.} The same policies executed in sequence through the
+mission runner, on the same seeds and episode counts. The quantity of interest is the
+difference between observed mission success and the product of the individual success
+rates from E1. This is the core result and it exists whichever way it comes out.
+
+\textbf{E3: measuring the seam.} At each handover, the delivered state is converted to
+a per-channel $z$-score against the successor's stored observation mean and standard
+deviation. Two summary statistics are recorded: the largest absolute channel deviation,
+and the fraction of channels beyond three standard deviations. These are correlated
+against per-episode mission outcome. A relationship between them is the evidence for
+the central claim; its absence falsifies the claim and sends the explanation elsewhere.
+
+\textbf{E4: three repairs, compared.} Each repair is applied independently so their
+contributions can be separated.
+
+\begin{enumerate}
+\itemsep0.15em
+\item \emph{Wider initial distribution.} Retrain the successor over a broader range of
+starting states, in the spirit of domain randomisation \cite{tobin2017}, so that the
+handoff state is no longer unusual.
+\item \emph{Handoff fine-tuning.} Run the predecessor, collect the states it actually
+produces, and continue training the successor on those states. This is DAgger
+\cite{ross2011} applied to a skill boundary rather than to an expert.
+\item \emph{Learned switching.} Replace the fixed handover criterion with a small
+learned policy that selects the moment of transfer.
+\end{enumerate}
+
+\textbf{Controls.} Three controls guard against conclusions that are artefacts rather
+than effects, and each is included because it has already caught a false conclusion
+during preliminary work on this simulator.
+
+A \emph{frozen-policy control} re-runs any surprising training curve with the learning
+rate set to zero. A curve that reproduces with a frozen network is not learning and not
+a property of the algorithm. During preliminary work this control converted an apparent
+eighty-point training collapse into a diagnosis of drifting observation statistics.
+
+A \emph{baseline-drop control} accompanies any claim that a policy generalises poorly.
+The hand-written controller, which has nothing to memorise, is scored on the same
+held-out world. If it loses the same amount, the world is harder and no memorisation
+has been shown.
+
+\emph{Unit tests on the learning code} cover advantage estimation at truncated episode
+boundaries against hand-computed values, a reward-scale assertion that the worst
+terminal penalty exceeds the accumulated per-step time cost so that ending an episode
+early can never be the cheapest available action, and a check that any imitation-
+initialised policy is evaluated on its own before it is trusted.
+
+All results are reported as mean and spread across five seeds on paired episodes. Task
+definitions are frozen once E1 is measured; any later change to a reward or tolerance
+is reported as an ablation rather than silently folded into the headline result.
+
+\section{Impact}
+
+The practical contribution is a measurement procedure. If handoff distribution overlap
+predicts composed-system failure, then anyone chaining independently trained skills has
+a cheap diagnostic available before deployment: compare the delivered state against
+statistics the policy already stores, and know in advance which seam will fail and
+which is safe. That turns a property normally discovered through end-to-end testing
+into something checkable at each boundary.
+
+The negative result is also useful. If composition succeeds where the individual
+success rates predict it should, that is evidence that independently trained skills
+compose more robustly than the covariate-shift argument suggests, and it narrows where
+the hierarchical reinforcement learning literature's emphasis on joint training is
+actually necessary.
+
+More broadly, autonomous spacecraft operation is a domain where missions are naturally
+phased and where each phase already has well-understood classical control laws. Knowing
+where learned components can be substituted into such a sequence, and what has to be
+verified at the boundaries, is a prerequisite for using them at all.
+
+\section{Timeline}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|p{10.2cm}|}
+\hline
+\textbf{Week Of} & \textbf{Description} \\
+\hline
+October 26 & PPO implementation, environment wrapper and engine bridge; unit tests on the learning code. Gate: landing skill reproduced at its reference rate. \\
+\hline
+November 2 & Second skill trained; E1 reference measurements at five seeds. Gate: both skills measured and task definitions frozen. \\
+\hline
+November 9 & Mission runner across the interface mismatch; E2 and E3 run. Gate: chained success rate and seam measurement in hand. \\
+\hline
+November 16 & E4 repairs implemented and compared; analysis and figures. \\
+\hline
+November 23 & Finalize paper, code and presentation. \\
+\hline
+\end{tabular}
+\end{table}
+
+The schedule has no slack. Writing the learning algorithm and running the composition
+study are each substantial, and four weeks covers both only if nothing is added. If the
+second week slips, the fallback is to retain an existing PPO implementation and spend
+the remaining time on the study, which preserves the result at the cost of the
+implementation exercise. A second fallback reduces the scope to a single handoff rather
+than attempting additional skills.
+
+\begin{thebibliography}{9}
+
+\bibitem{bacon2017}
+P.-L. Bacon, J. Harb, and D. Precup, ``The option-critic architecture,''
+\emph{Proceedings of the AAAI Conference on Artificial Intelligence}, vol.~31,
+no.~1, 2017.
+
+\bibitem{nachum2018}
+O. Nachum, S. Gu, H. Lee, and S. Levine, ``Data-efficient hierarchical reinforcement
+learning,'' \emph{Advances in Neural Information Processing Systems}, vol.~31, 2018.
+
+\bibitem{ng1999}
+A. Y. Ng, D. Harada, and S. Russell, ``Policy invariance under reward transformations:
+Theory and application to reward shaping,'' \emph{Proceedings of the Sixteenth
+International Conference on Machine Learning}, pp.~278--287, 1999.
+
+\bibitem{ross2011}
+S. Ross, G. J. Gordon, and J. A. Bagnell, ``A reduction of imitation learning and
+structured prediction to no-regret online learning,'' \emph{Proceedings of the
+Fourteenth International Conference on Artificial Intelligence and Statistics},
+pp.~627--635, 2011.
+
+\bibitem{schulman2017}
+J. Schulman, F. Wolski, P. Dhariwal, A. Radford, and O. Klimov, ``Proximal policy
+optimization algorithms,'' \emph{arXiv preprint arXiv:1707.06347}, 2017.
+
+\bibitem{sutton1999}
+R. S. Sutton, D. Precup, and S. Singh, ``Between MDPs and semi-MDPs: A framework for
+temporal abstraction in reinforcement learning,'' \emph{Artificial Intelligence},
+vol.~112, no.~1--2, pp.~181--211, 1999.
+
+\bibitem{tobin2017}
+J. Tobin, R. Fong, A. Ray, J. Schneider, W. Zaremba, and P. Abbeel, ``Domain
+randomization for transferring deep neural networks from simulation to the real
+world,'' \emph{IEEE/RSJ International Conference on Intelligent Robots and Systems
+(IROS)}, pp.~23--30, 2017.
+
+\end{thebibliography}
+
+\end{document}

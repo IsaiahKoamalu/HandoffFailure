@@ -223,7 +223,7 @@ func _ready() -> void:
 	refuel()
 	if headless_agent:
 		# Terrain collision is replaced by analytic ground in training; see
-		# rl/landing_env.gd. Nothing here is heard, and normally nothing is
+		# the task environment. Nothing here is heard, and normally nothing is
 		# rendered either.
 		if agent_visuals:
 			_build_thrusters()
