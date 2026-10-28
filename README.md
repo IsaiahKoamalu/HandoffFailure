@@ -51,7 +51,7 @@ per shell and the commands below work unchanged on both.
 
 ```bash
 # macOS
-export GODOT=/Users/isaiahbroderson/Downloads/Godot.app/Contents/MacOS/Godot
+export GODOT=/Applications/Godot.app/Contents/MacOS/Godot
 # Windows, Git Bash
 export GODOT=/c/path/to/Godot_v4.7.2-stable_win64_console.exe
 
