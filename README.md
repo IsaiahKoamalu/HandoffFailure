@@ -7,8 +7,8 @@ A reinforcement learning project. One claim is being tested:
 
 Two spacecraft control skills — orbit insertion, then descent and landing — are trained
 separately, chained into one mission, and measured at the seam where one hands the ship
-to the other. `ROADMAP.md` is the week-by-week plan. `proposal/main.typ` is the written
-proposal.
+to the other. `ROADMAP.md` is the week-by-week plan, `docs/protocol.md` is the contract
+between the engine and the trainer, and `proposal/main.typ` is the written proposal.
 
 ## What is apparatus and what is the project
 
