@@ -9,7 +9,6 @@ the simulator still behaves.
 | --- | --- |
 | `autopilot.gd` | The hand-written analytic controller. Flies transit, then descent, on `[P]`. Supplies the baselines, and is the predecessor at the second seam. |
 | `neural_pilot.gd` | Forward pass of a trained network in GDScript. Loads `runs/landing/policy.json`, and degrades to "untrained" when there is none. |
-| `spectator.gd` | Free camera for watching a run. Does not compile until the training host exists: it reads the old environment's ships, targets and outcome codes. |
 | `checks/autoland_check.tscn` | Lands repeatedly under a policy and reports the rate. |
 | `checks/cruise_check.tscn` | Checks the flight assist can hold a velocity between bodies. |
 | `checks/journey_check.tscn` | Flies whole journeys, planet to planet. |
@@ -21,6 +20,12 @@ the simulator still behaves.
 | `checks/terrain_report.tscn` | Prints what the terrain generator produced per body. |
 
 ## To be written
+
+A spectator — a free camera that watches a training run and names each outcome —
+was removed with the rest of the trainer. It is in history at `4a714be` as
+`rl/spectator.gd`, and the camera and overlay work; only the outcome codes and the
+handle on the environment need re-pointing once the task definitions exist. Lift it
+back rather than writing one.
 
 The two task definitions, the headless training host and its scene, and the mission
 runner that carries the ship across the interface mismatch between the skills. The two
