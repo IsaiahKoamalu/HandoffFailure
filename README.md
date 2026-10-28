@@ -46,9 +46,27 @@ not a starting point: it may be read, and it is not this project's work.
 
 ## Running the simulator
 
+The engine is not on the `PATH` on either machine, so set `GODOT` to the binary once
+per shell and the commands below work unchanged on both.
+
 ```bash
-Godot --headless --path . --import   # after adding any script with a class_name
-Godot --path . sim/main.tscn
+# macOS
+export GODOT=/Users/isaiahbroderson/Downloads/Godot.app/Contents/MacOS/Godot
+# Windows, Git Bash
+export GODOT=/c/path/to/Godot_v4.7.2-stable_win64_console.exe
+
+"$GODOT" --headless --path . --import   # after adding any script with a class_name
+"$GODOT" --path . sim/main.tscn
+```
+
+On macOS the binary is inside the `.app` bundle, at `Contents/MacOS/Godot`; opening the
+bundle itself launches the editor and ignores the arguments. Use the `_console` build on
+Windows, or the engine detaches and prints nothing.
+
+A check scene runs the same way:
+
+```bash
+"$GODOT" --headless --fixed-fps 60 --path . res://rl/checks/terrain_report.tscn
 ```
 
 The reimport is not optional. Godot resolves `class_name` through
