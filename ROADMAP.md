@@ -13,8 +13,8 @@ it slips there too.
 
 ## Ground rules
 
-**Fixed apparatus.** `ship.gd`, `planet.gd`, `main.tscn`, the terrain, the orbital
-propagation. No feature work on the simulator is in scope. If I think I need a
+**Fixed apparatus.** Everything under `sim/`: the ship, the planets, the terrain, the
+orbital propagation, and `sim/surface.gd`, the shared surface geometry. No feature work on the simulator is in scope. If I think I need a
 simulator change, that is a signal the task definition is wrong, not the sim.
 
 **Written for this project.** PPO, the environment wrapper and bridge client, both task

@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3]
 
-[ext_resource type="Script" path="res://rl/autoland_check.gd" id="1_check"]
+[ext_resource type="Script" path="res://rl/checks/autoland_check.gd" id="1_check"]
 
 [node name="AutolandCheck" type="Node3D"]
 script = ExtResource("1_check")

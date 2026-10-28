@@ -3,7 +3,7 @@ extends Node3D
 ## Measures the shape of every planet's terrain, so "too spiky" and "mostly
 ## ocean" can be numbers instead of impressions.
 ##
-##     Godot.exe --headless --fixed-fps 60 --path . res://rl/terrain_report.tscn
+##     Godot.exe --headless --fixed-fps 60 --path . res://rl/checks/terrain_report.tscn
 ##
 ## Reports, per planet:
 ##
@@ -18,7 +18,7 @@ extends Node3D
 ## distance does, and it is also exactly what decides whether a set of landing
 ## struts can sit level on the result.
 
-const MAIN_SCENE := "res://main.tscn"
+const MAIN_SCENE := "res://sim/main.tscn"
 ## Directions sampled per planet. Fibonacci-distributed, so this is an even
 ## covering rather than a random one and the numbers are stable run to run.
 const SAMPLES: int = 20000

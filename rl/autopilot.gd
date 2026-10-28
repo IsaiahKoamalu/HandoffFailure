@@ -172,6 +172,11 @@ var _command_turn: Vector3 = Vector3.ZERO
 var _held: int = 0
 
 var _ship: Ship
+## The landing task's script, which owns the observation the policy reads.
+## Untyped, and found by name at runtime rather than referenced directly, so the
+## game and its checks still compile on a checkout where the task has not been
+## written yet. Null until it has.
+var _task = null
 var _pilot: NeuralPilot
 var _observation := PackedFloat32Array()
 var _descent_ticks: int = 0
@@ -192,21 +197,35 @@ func _init(ship: Ship) -> void:
 func _ready() -> void:
 	# Ahead of Ship, so the commands are already in place when it reads them.
 	process_physics_priority = -10
-	_observation.resize(LandingEnv.OBS_SIZE)
-	_pilot = NeuralPilot.load_from()
+	_task = _find_script("LandingEnv")
+	if _task == null:
+		status = "no landing task (see rl/README.md)"
+		return
+	_observation.resize(_task.OBS_SIZE)
+	_pilot = NeuralPilot.load_from(_task.OBS_SIZE)
 	is_available = _pilot != null
 	# A fresh checkout has no trained policy and that is fine — the game plays
 	# exactly as it did before, and the key does nothing but say so.
 	status = "ready" if is_available else "no policy (see rl/README.md)"
 
 
+## The script registered under a global class name, or null if there is none.
+static func _find_script(global_name: String) -> Script:
+	for entry in ProjectSettings.get_global_class_list():
+		if entry["class"] == global_name:
+			return load(entry["path"])
+	return null
+
+
 ## Fly a different network from here on. False leaves the current one in place.
 ##
-## Exists for rl/autoland_check.tscn, which has to score a *candidate* before it
+## Exists for rl/checks/autoland_check.tscn, which has to score a *candidate* before it
 ## is installed: "re-verify the candidate in game before swapping" cannot be
 ## done by a check that can only ever load the policy already shipped.
 func use_policy(path: String) -> bool:
-	var pilot := NeuralPilot.load_from(path)
+	if _task == null:
+		return false
+	var pilot := NeuralPilot.load_from(_task.OBS_SIZE, path)
 	if pilot == null:
 		return false
 	_pilot = pilot
@@ -293,7 +312,7 @@ func _physics_process(_delta: float) -> void:
 
 	var planet: Planet = destination as Planet
 	var dominant: Planet = SolarSystem.Instance.get_dominant_planet(_ship.global_position)
-	var frame := LandingEnv.surface_frame(_ship.global_position, planet)
+	var frame := Surface.surface_frame(_ship.global_position, planet)
 	var altitude: float = frame[0]
 
 	if _has_landed(planet, altitude):
@@ -477,7 +496,7 @@ func _run_descent(planet: Planet) -> void:
 	# Decide at the rate the policy was trained at, and hold in between. The
 	# commands are not latched on the ship, so they are re-applied every tick.
 	if _held <= 0:
-		LandingEnv.build_observation(
+		_task.build_observation(
 			_ship, planet,
 			float(_descent_ticks) / float(DESCENT_MAX_TICKS), _observation, 0
 		)

@@ -7,13 +7,13 @@ extends Node3D
 ## actually presses — main.tscn, the real Ship node, ShipAutopilot reading
 ## NeuralPilot — and reports whether the ship gets down.
 ##
-##     Godot.exe --headless --fixed-fps 60 --path . res://rl/autoland_check.tscn
+##     Godot.exe --headless --fixed-fps 60 --path . res://rl/checks/autoland_check.tscn
 ##
 ## It deliberately does NOT go through LandingEnv. If the observation the
 ## autopilot builds in the cockpit disagreed with the one the trainer builds,
 ## every test in rl/ would still pass and only this one would fail.
 
-const MAIN_SCENE := "res://main.tscn"
+const MAIN_SCENE := "res://sim/main.tscn"
 const ATTEMPTS: int = 12
 const MAX_TICKS: int = 10000
 
@@ -115,7 +115,7 @@ func _physics_process(_delta: float) -> void:
 		return
 
 	_ticks += 1
-	var frame := LandingEnv.surface_frame(_ship.global_position, _planet)
+	var frame := Surface.surface_frame(_ship.global_position, _planet)
 	var altitude: float = frame[0]
 	var speed: float = _planet.get_relative_velocity_to_surface(
 		_ship.global_position, _ship.linear_velocity
@@ -129,9 +129,9 @@ func _physics_process(_delta: float) -> void:
 		# The same gate LandingEnv scores with, so this number is comparable to
 		# everything reported by python/evaluate.py.
 		var align: float = _ship.global_basis.y.dot(frame[1])
-		if not LandingEnv.is_over_land(_ship.global_position, _planet):
+		if not Surface.is_over_land(_ship.global_position, _planet):
 			verdict = "DITCHED speed %5.2f align %.3f" % [speed, align]
-		elif not LandingEnv.is_on_target_site(_ship.global_position, _planet):
+		elif not Surface.is_on_target_site(_ship.global_position, _planet):
 			verdict = "MISSED  wrong landmass, speed %5.2f" % speed
 		elif speed <= 2.0 and align >= 0.9:
 			_landed += 1
@@ -141,8 +141,8 @@ func _physics_process(_delta: float) -> void:
 	elif not _ship.autopilot.is_engaged:
 		finished = true
 		var align_now: float = _ship.global_basis.y.dot(frame[1])
-		var on_site: bool = LandingEnv.is_on_target_site(_ship.global_position, _planet)
-		var dry: bool = LandingEnv.is_over_land(_ship.global_position, _planet)
+		var on_site: bool = Surface.is_on_target_site(_ship.global_position, _planet)
+		var dry: bool = Surface.is_over_land(_ship.global_position, _planet)
 		if _ship.autopilot.status == "landed" and speed <= 2.0 and align_now >= 0.9 and on_site:
 			_landed += 1
 			verdict = "landed  speed %5.2f align %.3f alt %.2f" % [speed, align_now, altitude]

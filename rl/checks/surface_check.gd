@@ -2,7 +2,7 @@ extends Node3D
 
 ## What has to be true of a ship that has landed and a pilot who gets out.
 ##
-##     Godot.exe --fixed-fps 60 --path . res://rl/surface_check.tscn
+##     Godot.exe --fixed-fps 60 --path . res://rl/checks/surface_check.tscn
 ##
 ## Deliberately NOT headless: the ship and the astronaut are fine headless, but
 ## running with a display is what the player has, and none of this costs enough
@@ -19,7 +19,7 @@ extends Node3D
 ##   boards   The astronaut can walk up the lowered ramp and onto the deck. The
 ##            geometry either lines up or the ramp is scenery.
 
-const MAIN_SCENE := "res://main.tscn"
+const MAIN_SCENE := "res://sim/main.tscn"
 ## Sites spread across the target continent, so this is not one lucky patch of
 ## flat ground. Offsets in radians from the landmass centre.
 const SITES: Array[Vector2] = [

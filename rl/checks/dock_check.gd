@@ -7,7 +7,7 @@ extends Node3D
 ## ShipAutopilot, Ship.try_dock and the real Astronaut, so what it exercises is
 ## the thing the player presses.
 ##
-##     Godot --headless --fixed-fps 60 --path . res://rl/dock_check.tscn
+##     Godot --headless --fixed-fps 60 --path . res://rl/checks/dock_check.tscn
 ##
 ## The astronaut half matters as much as the approach. A station is a frame like
 ## the ship's cabin: the room orbits a planet at eight units a second while
@@ -15,7 +15,7 @@ extends Node3D
 ## the room. A frame bug does not look like a crash, it looks like the astronaut
 ## sliding into a wall.
 
-const MAIN_SCENE := "res://main.tscn"
+const MAIN_SCENE := "res://sim/main.tscn"
 const MAX_TICKS: int = 60000
 
 var _ship: Ship

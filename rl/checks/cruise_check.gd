@@ -7,7 +7,7 @@ extends Node3D
 ## that is where a self-driving ship spends most of a journey and it is the case
 ## the old assist did nothing at all in.
 ##
-##     Godot --headless --fixed-fps 60 --path . res://rl/cruise_check.tscn
+##     Godot --headless --fixed-fps 60 --path . res://rl/checks/cruise_check.tscn
 ##
 ## What it asserts is that the velocity error sits where the physics says it
 ## should, not that it goes to zero. It cannot go to zero: the assist is
@@ -21,7 +21,7 @@ extends Node3D
 ## check used a flat tolerance and reported a failure for a ship that had simply
 ## flown somewhere gravity is stronger.
 
-const MAIN_SCENE := "res://main.tscn"
+const MAIN_SCENE := "res://sim/main.tscn"
 const FIRST: int = 600
 const SECOND: int = 1200
 ## Somewhere outside every capture radius. Planet3 orbits at 3600 and the

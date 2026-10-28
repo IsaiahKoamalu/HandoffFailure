@@ -21,6 +21,10 @@ class_name NeuralPilot
 
 const DEFAULT_PATH := "res://rl/runs/landing/policy.json"
 
+## Three translation axes and three rotation axes — exactly the control set the
+## player has, and the order the autopilot unpacks an action in.
+const ACT_SIZE: int = 6
+
 ## Which task these weights were trained for. Checked on load, because a
 ## policy trained for one task will happily run against another: it produces
 ## six numbers in range either way, and flies something it has never seen.
@@ -45,7 +49,11 @@ var _scratch_b: PackedFloat32Array = PackedFloat32Array()
 
 ## Returns null when there is no policy to load, which is the normal state of a
 ## fresh checkout — nobody should have to train before they can play.
-static func load_from(path: String = DEFAULT_PATH) -> NeuralPilot:
+##
+## `expected_obs_size` is the observation width of the build doing the flying.
+## It is passed in rather than read from the landing task so that this file
+## compiles on a checkout where no task has been written yet.
+static func load_from(expected_obs_size: int, path: String = DEFAULT_PATH) -> NeuralPilot:
 	if not FileAccess.file_exists(path):
 		return null
 	var file := FileAccess.open(path, FileAccess.READ)
@@ -58,12 +66,12 @@ static func load_from(path: String = DEFAULT_PATH) -> NeuralPilot:
 		return null
 
 	var pilot := NeuralPilot.new()
-	if not pilot._adopt(parsed):
+	if not pilot._adopt(parsed, expected_obs_size):
 		return null
 	return pilot
 
 
-func _adopt(data: Dictionary) -> bool:
+func _adopt(data: Dictionary, expected_obs_size: int) -> bool:
 	if int(data.get("format", 0)) != 1:
 		push_warning("NeuralPilot: unsupported weights format")
 		return false
@@ -80,11 +88,11 @@ func _adopt(data: Dictionary) -> bool:
 		push_warning("NeuralPilot: policy was trained for '%s'; this loader flies landings."
 			% task)
 		return false
-	if obs_size != LandingEnv.OBS_SIZE or act_size != LandingEnv.ACT_SIZE:
+	if obs_size != expected_obs_size or act_size != ACT_SIZE:
 		# Almost always means the observation was changed without retraining.
 		# Better to refuse than to silently feed the network the wrong columns.
 		push_warning("NeuralPilot: policy is %d->%d but this build is %d->%d; retrain."
-			% [obs_size, act_size, LandingEnv.OBS_SIZE, LandingEnv.ACT_SIZE])
+			% [obs_size, act_size, expected_obs_size, ACT_SIZE])
 		return false
 
 	for layer in data.get("layers", []):

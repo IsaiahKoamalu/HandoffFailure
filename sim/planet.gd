@@ -365,7 +365,7 @@ func _terrain_material() -> Material:
 		return plain
 
 	var mat := ShaderMaterial.new()
-	mat.shader = load("res://shaders/terrain.gdshader")
+	mat.shader = load("res://sim/shaders/terrain.gdshader")
 	# Frequencies are per texture, and the shader scales the sample point, so
 	# these two only have to be broadband -- the scale uniforms do the choosing.
 	mat.set_shader_parameter("detail_noise", _noise_texture(terrain_seed + 11, 0.04, 4))
@@ -392,7 +392,7 @@ func _build_water() -> void:
 
 	if _drawing():
 		var mat := ShaderMaterial.new()
-		mat.shader = load("res://shaders/ocean.gdshader")
+		mat.shader = load("res://sim/shaders/ocean.gdshader")
 		mat.set_shader_parameter("shallow_color", water_color)
 		mat.set_shader_parameter("deep_color", water_deep_color)
 		ocean.material_override = mat
@@ -425,7 +425,7 @@ func _build_atmosphere() -> void:
 	shell.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 	var mat := ShaderMaterial.new()
-	mat.shader = load("res://shaders/atmosphere.gdshader")
+	mat.shader = load("res://sim/shaders/atmosphere.gdshader")
 	mat.set_shader_parameter("atmosphere_color", atmosphere_color)
 	mat.set_shader_parameter("sunset_color", atmosphere_sunset_color)
 	mat.set_shader_parameter("density", atmosphere_density)
@@ -466,7 +466,7 @@ func _build_clouds() -> void:
 	deck.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 	var mat := ShaderMaterial.new()
-	mat.shader = load("res://shaders/clouds.gdshader")
+	mat.shader = load("res://sim/shaders/clouds.gdshader")
 	# Three octaves, not the terrain's four: a fourth adds a speckle at cloud
 	# scale that reads as television static rather than weather.
 	mat.set_shader_parameter("cloud_noise", _noise_texture(terrain_seed + 31, 0.015, 3))

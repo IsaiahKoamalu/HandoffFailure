@@ -1,14 +1,14 @@
 [gd_scene format=3 uid="uid://cl55grv86e3kn"]
 
-[ext_resource type="Script" uid="uid://cdjdds01pwge4" path="res://main.gd" id="1_1bvp3"]
-[ext_resource type="Script" uid="uid://rjix0jpaqbnk" path="res://planet.gd" id="2_h2yge"]
-[ext_resource type="Texture2D" uid="uid://c4jshq7x0hbj1" path="res://ESO_-_Milky_Way.jpg" id="4_1bvp3"]
-[ext_resource type="PackedScene" uid="uid://bf7vn77fyd3ra" path="res://ship.tscn" id="5_ship"]
-[ext_resource type="PackedScene" path="res://astronaut.tscn" id="6_astro"]
-[ext_resource type="Script" uid="uid://itno6mhiwwrj" path="res://hud.gd" id="7_hud"]
-[ext_resource type="Script" path="res://station.gd" id="8_station"]
-[ext_resource type="Script" path="res://interactable.gd" id="2_inter"]
-[ext_resource type="Shader" path="res://shaders/hull.gdshader" id="9_hull"]
+[ext_resource type="Script" uid="uid://cdjdds01pwge4" path="res://sim/main.gd" id="1_1bvp3"]
+[ext_resource type="Script" uid="uid://rjix0jpaqbnk" path="res://sim/planet.gd" id="2_h2yge"]
+[ext_resource type="Script" uid="uid://bfgg8dffornks" path="res://sim/interactable.gd" id="2_inter"]
+[ext_resource type="Texture2D" uid="uid://c4jshq7x0hbj1" path="res://sim/ESO_-_Milky_Way.jpg" id="4_1bvp3"]
+[ext_resource type="PackedScene" uid="uid://bf7vn77fyd3ra" path="res://sim/ship.tscn" id="5_ship"]
+[ext_resource type="PackedScene" path="res://sim/astronaut.tscn" id="6_astro"]
+[ext_resource type="Script" uid="uid://itno6mhiwwrj" path="res://sim/hud.gd" id="7_hud"]
+[ext_resource type="Script" uid="uid://dd5aqt2wd5dob" path="res://sim/station.gd" id="8_station"]
+[ext_resource type="Shader" uid="uid://fremmfs2ybhc" path="res://sim/shaders/hull.gdshader" id="9_hull"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_0xm2m"]
 shading_mode = 0
@@ -32,26 +32,8 @@ height = 40.0
 [sub_resource type="SphereShape3D" id="SphereShape3D_lquwl"]
 radius = 20.0
 
-[sub_resource type="ShaderMaterial" id="StandardMaterial3D_station"]
-shader = ExtResource("9_hull")
-shader_parameter/hull_color = Color(0.5, 0.53, 0.58, 1)
-shader_parameter/metallic_amount = 0.6
-shader_parameter/roughness_amount = 0.45
-shader_parameter/panel_size = 2.2
-shader_parameter/seam_width = 0.05
-shader_parameter/seam_depth = 0.5
-shader_parameter/panel_variation = 0.08
-shader_parameter/trim_color = Color(0.4, 0.78, 1.0, 1)
-shader_parameter/trim_strength = 0.0
-shader_parameter/trim_height = 0.0
-shader_parameter/trim_thickness = 0.1
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_station_unused"]
-albedo_color = Color(0.62, 0.64, 0.68, 1)
-metallic = 0.7
-roughness = 0.45
-
 [sub_resource type="ShaderMaterial" id="StandardMaterial3D_deck"]
+render_priority = 0
 shader = ExtResource("9_hull")
 shader_parameter/hull_color = Color(0.27, 0.29, 0.33, 1)
 shader_parameter/metallic_amount = 0.35
@@ -60,14 +42,10 @@ shader_parameter/panel_size = 1.6
 shader_parameter/seam_width = 0.04
 shader_parameter/seam_depth = 0.55
 shader_parameter/panel_variation = 0.05
-shader_parameter/trim_color = Color(0.4, 0.78, 1.0, 1)
+shader_parameter/trim_color = Color(0.4, 0.78, 1, 1)
 shader_parameter/trim_strength = 0.0
 shader_parameter/trim_height = 0.0
 shader_parameter/trim_thickness = 0.1
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_deck_unused"]
-albedo_color = Color(0.3, 0.32, 0.36, 1)
-roughness = 0.85
 
 [sub_resource type="BoxMesh" id="BoxMesh_deck"]
 material = SubResource("StandardMaterial3D_deck")
@@ -76,59 +54,27 @@ size = Vector3(16, 1, 24)
 [sub_resource type="BoxShape3D" id="BoxShape3D_deck"]
 size = Vector3(16, 1, 24)
 
+[sub_resource type="ShaderMaterial" id="StandardMaterial3D_station"]
+render_priority = 0
+shader = ExtResource("9_hull")
+shader_parameter/hull_color = Color(0.5, 0.53, 0.58, 1)
+shader_parameter/metallic_amount = 0.6
+shader_parameter/roughness_amount = 0.45
+shader_parameter/panel_size = 2.2
+shader_parameter/seam_width = 0.05
+shader_parameter/seam_depth = 0.5
+shader_parameter/panel_variation = 0.08
+shader_parameter/trim_color = Color(0.4, 0.78, 1, 1)
+shader_parameter/trim_strength = 0.0
+shader_parameter/trim_height = 0.0
+shader_parameter/trim_thickness = 0.1
+
 [sub_resource type="BoxMesh" id="BoxMesh_wallx"]
 material = SubResource("StandardMaterial3D_station")
 size = Vector3(1, 9, 24)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_wallx"]
 size = Vector3(1, 9, 24)
-
-[sub_resource type="BoxMesh" id="BoxMesh_wallz"]
-material = SubResource("StandardMaterial3D_station")
-size = Vector3(16, 9, 1)
-
-[sub_resource type="BoxShape3D" id="BoxShape3D_wallz"]
-size = Vector3(16, 9, 1)
-
-[sub_resource type="BoxShape3D" id="BoxShape3D_reach"]
-size = Vector3(2.4, 2.4, 2.4)
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_beacon"]
-albedo_color = Color(0.6, 0.06, 0.06, 1)
-emission_enabled = true
-emission = Color(1.0, 0.12, 0.1, 1)
-emission_energy_multiplier = 5.0
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_window"]
-albedo_color = Color(0.7, 0.78, 0.9, 1)
-emission_enabled = true
-emission = Color(1.0, 0.92, 0.75, 1)
-emission_energy_multiplier = 2.2
-
-[sub_resource type="SphereMesh" id="SphereMesh_beacon"]
-material = SubResource("StandardMaterial3D_beacon")
-radius = 0.35
-height = 0.7
-radial_segments = 10
-rings = 6
-
-[sub_resource type="BoxMesh" id="BoxMesh_window"]
-material = SubResource("StandardMaterial3D_window")
-size = Vector3(0.25, 1.2, 18)
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_port"]
-albedo_color = Color(0.95, 0.55, 0.15, 1)
-emission_enabled = true
-emission = Color(1.0, 0.6, 0.2, 1)
-emission_energy_multiplier = 2.5
-emission_enabled = true
-emission = Color(0.95, 0.45, 0.1, 1)
-emission_energy_multiplier = 2.0
-
-[sub_resource type="TorusMesh" id="TorusMesh_port"]
-material = SubResource("StandardMaterial3D_port")
-inner_radius = 1.5
-outer_radius = 1.9
 
 [sub_resource type="BoxMesh" id="BoxMesh_forewide"]
 material = SubResource("StandardMaterial3D_station")
@@ -165,12 +111,56 @@ size = Vector3(0.4, 2.4, 3)
 [sub_resource type="BoxShape3D" id="BoxShape3D_tunnelwall"]
 size = Vector3(0.4, 2.4, 3)
 
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_port"]
+albedo_color = Color(0.95, 0.55, 0.15, 1)
+emission_enabled = true
+emission = Color(0.95, 0.45, 0.1, 1)
+emission_energy_multiplier = 2.0
+
 [sub_resource type="BoxMesh" id="BoxMesh_hatch"]
 material = SubResource("StandardMaterial3D_port")
 size = Vector3(2, 2, 0.3)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_hatch"]
 size = Vector3(2, 2, 0.3)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_window"]
+albedo_color = Color(0.7, 0.78, 0.9, 1)
+emission_enabled = true
+emission = Color(1, 0.92, 0.75, 1)
+emission_energy_multiplier = 2.2
+
+[sub_resource type="BoxMesh" id="BoxMesh_window"]
+material = SubResource("StandardMaterial3D_window")
+size = Vector3(0.25, 1.2, 18)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_beacon"]
+albedo_color = Color(0.6, 0.06, 0.06, 1)
+emission_enabled = true
+emission = Color(1, 0.12, 0.1, 1)
+emission_energy_multiplier = 5.0
+
+[sub_resource type="SphereMesh" id="SphereMesh_beacon"]
+material = SubResource("StandardMaterial3D_beacon")
+radius = 0.35
+height = 0.7
+radial_segments = 10
+rings = 6
+
+[sub_resource type="BoxMesh" id="BoxMesh_wallz"]
+material = SubResource("StandardMaterial3D_station")
+size = Vector3(16, 9, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_wallz"]
+size = Vector3(16, 9, 1)
+
+[sub_resource type="TorusMesh" id="TorusMesh_port"]
+material = SubResource("StandardMaterial3D_port")
+inner_radius = 1.5
+outer_radius = 1.9
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_reach"]
+size = Vector3(2.4, 2.4, 2.4)
 
 [sub_resource type="PanoramaSkyMaterial" id="PanoramaSkyMaterial_lquwl"]
 panorama = ExtResource("4_1bvp3")
@@ -187,13 +177,13 @@ ambient_light_source = 2
 ambient_light_color = Color(0.14, 0.17, 0.26, 1)
 ambient_light_energy = 0.14
 reflected_light_source = 1
+tonemap_mode = 3
+tonemap_white = 3.0
 glow_enabled = true
 glow_intensity = 0.8
 glow_strength = 0.7
 glow_bloom = 0.12
 glow_hdr_threshold = 1.4
-tonemap_mode = 3
-tonemap_white = 3.0
 
 [node name="Main" type="Node3D" unique_id=241715004]
 script = ExtResource("1_1bvp3")
@@ -225,14 +215,10 @@ _orbital_angle = 180.0
 surface_radius = 180.0
 _day_length = 180.0
 terrain_enabled = true
-detail_frequency = 3.2
-continent_frequency = 1.05
 terrain_seed = 7
-landmark_count = 5
-scatter_enabled = true
-scatter_count = 300
-scatter_size = Vector2(0.3, 1.15)
 mesh_resolution = 160
+continent_frequency = 1.05
+detail_frequency = 3.2
 sea_level_bias = -0.07
 detail_weight = 0.4
 ridge_weight = 0.5
@@ -243,17 +229,21 @@ color_low = Color(0.2, 0.36, 0.18, 1)
 color_high = Color(0.35, 0.29, 0.2, 1)
 color_peak = Color(0.9, 0.91, 0.93, 1)
 color_rock = Color(0.35, 0.32, 0.28, 1)
-ocean_depth = 0.55
-water_color = Color(0.06, 0.28, 0.45, 0.72)
-water_deep_color = Color(0.01, 0.07, 0.18, 0.95)
 atmosphere_enabled = true
-atmosphere_color = Color(0.34, 0.56, 1.0, 1)
+atmosphere_color = Color(0.34, 0.56, 1, 1)
 atmosphere_height = 0.11
 atmosphere_density = 1.15
 clouds_enabled = true
 cloud_coverage = 0.3
 cloud_height = 0.062
-cloud_drift = 0.35
+ocean_depth = 0.55
+water_color = Color(0.06, 0.28, 0.45, 0.72)
+water_deep_color = Color(0.01, 0.07, 0.18, 0.95)
+scatter_enabled = true
+scatter_count = 300
+scatter_size = Vector2(0.3, 1.15)
+landmark_count = 5
+
 [node name="MeshInstance3D" type="MeshInstance3D" parent="Planet1" unique_id=703310355]
 mesh = SubResource("SphereMesh_1bvp3")
 
@@ -278,17 +268,12 @@ _day_length = 420.0
 terrain_enabled = true
 terrain_amplitude = 0.075
 terrain_seed = 21
-landmark_count = 5
-scatter_enabled = true
-scatter_count = 320
-scatter_size = Vector2(0.3, 1.3)
-shore_easing = 0.12
 mesh_resolution = 176
 continent_frequency = 0.8
 detail_frequency = 3.6
 sea_level_bias = 0.45
-detail_weight = 0.35
 ridge_weight = 1.15
+shore_easing = 0.12
 color_deep = Color(0.32, 0.18, 0.12, 1)
 color_shallow = Color(0.45, 0.26, 0.16, 1)
 color_shore = Color(0.5, 0.31, 0.19, 1)
@@ -296,12 +281,17 @@ color_low = Color(0.55, 0.34, 0.2, 1)
 color_high = Color(0.42, 0.24, 0.16, 1)
 color_peak = Color(0.58, 0.46, 0.38, 1)
 color_rock = Color(0.4, 0.22, 0.15, 1)
-water_enabled = false
 atmosphere_enabled = true
 atmosphere_color = Color(0.85, 0.5, 0.3, 1)
-atmosphere_sunset_color = Color(1.0, 0.42, 0.2, 1)
+atmosphere_sunset_color = Color(1, 0.42, 0.2, 1)
 atmosphere_height = 0.08
 atmosphere_density = 0.6
+water_enabled = false
+scatter_enabled = true
+scatter_count = 320
+scatter_size = Vector2(0.3, 1.3)
+landmark_count = 5
+
 [node name="MeshInstance3D" type="MeshInstance3D" parent="Planet2" unique_id=631325146]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.361847)
 mesh = SubResource("SphereMesh_1bvp3")
@@ -321,37 +311,37 @@ _day_length = 120.0
 terrain_enabled = true
 terrain_amplitude = 0.05
 terrain_seed = 43
-landmark_count = 4
-scatter_enabled = true
-scatter_count = 240
-scatter_size = Vector2(0.25, 0.95)
-shore_easing = 0.12
 mesh_resolution = 160
 continent_frequency = 1.5
 detail_frequency = 5.0
 sea_level_bias = -0.1
 detail_weight = 0.45
 ridge_weight = 0.95
+shore_easing = 0.12
 color_deep = Color(0.3, 0.42, 0.52, 1)
 color_shallow = Color(0.52, 0.66, 0.74, 1)
 color_shore = Color(0.78, 0.85, 0.9, 1)
 color_low = Color(0.84, 0.89, 0.93, 1)
 color_high = Color(0.72, 0.79, 0.86, 1)
-color_peak = Color(0.97, 0.98, 1.0, 1)
+color_peak = Color(0.97, 0.98, 1, 1)
 color_rock = Color(0.42, 0.46, 0.52, 1)
-ocean_depth = 0.9
-water_color = Color(0.42, 0.62, 0.7, 0.55)
-water_deep_color = Color(0.16, 0.32, 0.44, 0.85)
 atmosphere_enabled = true
-atmosphere_color = Color(0.62, 0.8, 1.0, 1)
+atmosphere_color = Color(0.62, 0.8, 1, 1)
 atmosphere_sunset_color = Color(0.85, 0.72, 0.9, 1)
-atmosphere_height = 0.1
 atmosphere_density = 0.9
 clouds_enabled = true
-cloud_color = Color(0.92, 0.95, 1.0, 1)
+cloud_color = Color(0.92, 0.95, 1, 1)
 cloud_coverage = 0.5
 cloud_height = 0.055
 cloud_drift = 0.6
+ocean_depth = 0.9
+water_color = Color(0.42, 0.62, 0.7, 0.55)
+water_deep_color = Color(0.16, 0.32, 0.44, 0.85)
+scatter_enabled = true
+scatter_count = 240
+scatter_size = Vector2(0.25, 0.95)
+landmark_count = 4
+
 [node name="MeshInstance3D" type="MeshInstance3D" parent="Planet3" unique_id=1524999546]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.361847)
 mesh = SubResource("SphereMesh_1bvp3")
@@ -372,17 +362,13 @@ _day_length = 90.0
 terrain_enabled = true
 terrain_amplitude = 0.085
 terrain_seed = 61
-landmark_count = 4
-scatter_enabled = true
-scatter_count = 300
-scatter_size = Vector2(0.3, 1.4)
-shore_easing = 0.12
 mesh_resolution = 160
 continent_frequency = 1.4
 detail_frequency = 4.5
 sea_level_bias = 0.1
 detail_weight = 0.4
 ridge_weight = 1.3
+shore_easing = 0.12
 color_deep = Color(0.12, 0.05, 0.04, 1)
 color_shallow = Color(0.2, 0.08, 0.05, 1)
 color_shore = Color(0.26, 0.13, 0.09, 1)
@@ -390,12 +376,11 @@ color_low = Color(0.19, 0.12, 0.11, 1)
 color_high = Color(0.15, 0.11, 0.11, 1)
 color_peak = Color(0.36, 0.31, 0.3, 1)
 color_rock = Color(0.13, 0.1, 0.1, 1)
-lava_color = Color(1.0, 0.36, 0.06, 1)
+lava_color = Color(1, 0.36, 0.06, 1)
 lava_strength = 3.4
-water_enabled = false
 atmosphere_enabled = true
 atmosphere_color = Color(0.9, 0.34, 0.12, 1)
-atmosphere_sunset_color = Color(1.0, 0.6, 0.15, 1)
+atmosphere_sunset_color = Color(1, 0.6, 0.15, 1)
 atmosphere_height = 0.13
 atmosphere_density = 1.5
 clouds_enabled = true
@@ -403,11 +388,16 @@ cloud_color = Color(0.28, 0.22, 0.2, 1)
 cloud_coverage = 0.5
 cloud_height = 0.075
 cloud_drift = 1.2
+water_enabled = false
+scatter_enabled = true
+scatter_count = 300
+scatter_size = Vector2(0.3, 1.4)
+landmark_count = 4
 
-[node name="MeshInstance3D" type="MeshInstance3D" parent="Planet4"]
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Planet4" unique_id=1432326762]
 mesh = SubResource("SphereMesh_1bvp3")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="Planet4"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Planet4" unique_id=1105608602]
 shape = SubResource("SphereShape3D_lquwl")
 
 [node name="Moon1" type="StaticBody3D" parent="." unique_id=1882624610 node_paths=PackedStringArray("_orbital_parent")]
@@ -423,18 +413,13 @@ _tidally_locked = true
 terrain_enabled = true
 terrain_amplitude = 0.09
 terrain_seed = 88
-landmark_count = 3
-scatter_enabled = true
-scatter_count = 380
-scatter_size = Vector2(0.25, 1.1)
-scatter_max_slope = 0.8
-shore_easing = 0.12
 mesh_resolution = 128
 continent_frequency = 2.2
 detail_frequency = 6.0
 sea_level_bias = 0.5
 detail_weight = 0.55
 ridge_weight = 0.9
+shore_easing = 0.12
 color_deep = Color(0.2, 0.2, 0.21, 1)
 color_shallow = Color(0.26, 0.26, 0.27, 1)
 color_shore = Color(0.38, 0.37, 0.36, 1)
@@ -443,204 +428,207 @@ color_high = Color(0.34, 0.33, 0.33, 1)
 color_peak = Color(0.66, 0.65, 0.64, 1)
 color_rock = Color(0.3, 0.29, 0.29, 1)
 water_enabled = false
-atmosphere_enabled = false
+scatter_enabled = true
+scatter_count = 380
+scatter_size = Vector2(0.25, 1.1)
+scatter_max_slope = 0.8
+landmark_count = 3
 
-[node name="MeshInstance3D" type="MeshInstance3D" parent="Moon1"]
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Moon1" unique_id=1573610857]
 mesh = SubResource("SphereMesh_1bvp3")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="Moon1"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Moon1" unique_id=210755316]
 shape = SubResource("SphereShape3D_lquwl")
 
-[node name="Station1" type="StaticBody3D" parent="." node_paths=PackedStringArray("orbital_parent", "hatch")]
+[node name="Station1" type="StaticBody3D" parent="." unique_id=245776253 node_paths=PackedStringArray("orbital_parent", "hatch")]
 script = ExtResource("8_station")
-display_name = "Kestrel Station"
 orbital_parent = NodePath("../Planet1")
 orbital_radius = 420.0
 orbital_angle = 40.0
 orbital_period = 300.0
-hull_extents = Vector3(8, 5, 12)
+display_name = "Kestrel Station"
 hatch = NodePath("Hatch")
 
-[node name="Floor" type="MeshInstance3D" parent="Station1"]
+[node name="Floor" type="MeshInstance3D" parent="Station1" unique_id=671439807]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -4.5, 0)
 mesh = SubResource("BoxMesh_deck")
 
-[node name="FloorShape" type="CollisionShape3D" parent="Station1"]
+[node name="FloorShape" type="CollisionShape3D" parent="Station1" unique_id=1951287639]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -4.5, 0)
 shape = SubResource("BoxShape3D_deck")
 
-[node name="Roof" type="MeshInstance3D" parent="Station1"]
+[node name="Roof" type="MeshInstance3D" parent="Station1" unique_id=1019611284]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.3, 0)
 mesh = SubResource("BoxMesh_deck")
 
-[node name="RoofShape" type="CollisionShape3D" parent="Station1"]
+[node name="RoofShape" type="CollisionShape3D" parent="Station1" unique_id=740106966]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.3, 0)
 shape = SubResource("BoxShape3D_deck")
 
-[node name="WallLeft" type="MeshInstance3D" parent="Station1"]
+[node name="WallLeft" type="MeshInstance3D" parent="Station1" unique_id=895593562]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7.5, -0.6, 0)
 mesh = SubResource("BoxMesh_wallx")
 
-[node name="WallLeftShape" type="CollisionShape3D" parent="Station1"]
+[node name="WallLeftShape" type="CollisionShape3D" parent="Station1" unique_id=1702921265]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7.5, -0.6, 0)
 shape = SubResource("BoxShape3D_wallx")
 
-[node name="WallRight" type="MeshInstance3D" parent="Station1"]
+[node name="WallRight" type="MeshInstance3D" parent="Station1" unique_id=1939098119]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 7.5, -0.6, 0)
 mesh = SubResource("BoxMesh_wallx")
 
-[node name="WallRightShape" type="CollisionShape3D" parent="Station1"]
+[node name="WallRightShape" type="CollisionShape3D" parent="Station1" unique_id=646594704]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 7.5, -0.6, 0)
 shape = SubResource("BoxShape3D_wallx")
 
-[node name="WallForeLeft" type="MeshInstance3D" parent="Station1"]
+[node name="WallForeLeft" type="MeshInstance3D" parent="Station1" unique_id=23834241]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.5, -0.6, -11.5)
 mesh = SubResource("BoxMesh_forewide")
 
-[node name="WallForeLeftShape" type="CollisionShape3D" parent="Station1"]
+[node name="WallForeLeftShape" type="CollisionShape3D" parent="Station1" unique_id=2108001272]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.5, -0.6, -11.5)
 shape = SubResource("BoxShape3D_forewide")
 
-[node name="WallForeRight" type="MeshInstance3D" parent="Station1"]
+[node name="WallForeRight" type="MeshInstance3D" parent="Station1" unique_id=1648561055]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4.5, -0.6, -11.5)
 mesh = SubResource("BoxMesh_forewide")
 
-[node name="WallForeRightShape" type="CollisionShape3D" parent="Station1"]
+[node name="WallForeRightShape" type="CollisionShape3D" parent="Station1" unique_id=935380017]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4.5, -0.6, -11.5)
 shape = SubResource("BoxShape3D_forewide")
 
-[node name="WallForeTop" type="MeshInstance3D" parent="Station1"]
+[node name="WallForeTop" type="MeshInstance3D" parent="Station1" unique_id=2069807782]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.95, -11.5)
 mesh = SubResource("BoxMesh_foretop")
 
-[node name="WallForeTopShape" type="CollisionShape3D" parent="Station1"]
+[node name="WallForeTopShape" type="CollisionShape3D" parent="Station1" unique_id=353230862]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.95, -11.5)
 shape = SubResource("BoxShape3D_foretop")
 
-[node name="WallForeBottom" type="MeshInstance3D" parent="Station1"]
+[node name="WallForeBottom" type="MeshInstance3D" parent="Station1" unique_id=1202958705]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -4.55, -11.5)
 mesh = SubResource("BoxMesh_forebottom")
 
-[node name="WallForeBottomShape" type="CollisionShape3D" parent="Station1"]
+[node name="WallForeBottomShape" type="CollisionShape3D" parent="Station1" unique_id=518934661]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -4.55, -11.5)
 shape = SubResource("BoxShape3D_forebottom")
 
-[node name="TunnelFloor" type="MeshInstance3D" parent="Station1"]
+[node name="TunnelFloor" type="MeshInstance3D" parent="Station1" unique_id=874751337]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -4.2, -12.5)
 mesh = SubResource("BoxMesh_tunneldeck")
 
-[node name="TunnelFloorShape" type="CollisionShape3D" parent="Station1"]
+[node name="TunnelFloorShape" type="CollisionShape3D" parent="Station1" unique_id=530443869]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -4.2, -12.5)
 shape = SubResource("BoxShape3D_tunneldeck")
 
-[node name="TunnelRoof" type="MeshInstance3D" parent="Station1"]
+[node name="TunnelRoof" type="MeshInstance3D" parent="Station1" unique_id=1167824041]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1.8, -12.5)
 mesh = SubResource("BoxMesh_tunneldeck")
 
-[node name="TunnelRoofShape" type="CollisionShape3D" parent="Station1"]
+[node name="TunnelRoofShape" type="CollisionShape3D" parent="Station1" unique_id=414329256]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1.8, -12.5)
 shape = SubResource("BoxShape3D_tunneldeck")
 
-[node name="TunnelWallLeft" type="MeshInstance3D" parent="Station1"]
+[node name="TunnelWallLeft" type="MeshInstance3D" parent="Station1" unique_id=524531217]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.2, -3, -12.5)
 mesh = SubResource("BoxMesh_tunnelwall")
 
-[node name="TunnelWallLeftShape" type="CollisionShape3D" parent="Station1"]
+[node name="TunnelWallLeftShape" type="CollisionShape3D" parent="Station1" unique_id=846197177]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.2, -3, -12.5)
 shape = SubResource("BoxShape3D_tunnelwall")
 
-[node name="TunnelWallRight" type="MeshInstance3D" parent="Station1"]
+[node name="TunnelWallRight" type="MeshInstance3D" parent="Station1" unique_id=880127689]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.2, -3, -12.5)
 mesh = SubResource("BoxMesh_tunnelwall")
 
-[node name="TunnelWallRightShape" type="CollisionShape3D" parent="Station1"]
+[node name="TunnelWallRightShape" type="CollisionShape3D" parent="Station1" unique_id=717175381]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.2, -3, -12.5)
 shape = SubResource("BoxShape3D_tunnelwall")
 
-[node name="Hatch" type="MeshInstance3D" parent="Station1"]
+[node name="Hatch" type="MeshInstance3D" parent="Station1" unique_id=671388128]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -3, -13.85)
 mesh = SubResource("BoxMesh_hatch")
 
-[node name="Shape" type="CollisionShape3D" parent="Station1/Hatch"]
+[node name="Shape" type="CollisionShape3D" parent="Station1/Hatch" unique_id=43581252]
 shape = SubResource("BoxShape3D_hatch")
 
-[node name="WindowStripLeft" type="MeshInstance3D" parent="Station1"]
+[node name="WindowStripLeft" type="MeshInstance3D" parent="Station1" unique_id=677836699]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7.62, 0.2, 0)
 mesh = SubResource("BoxMesh_window")
 
-[node name="WindowStripRight" type="MeshInstance3D" parent="Station1"]
+[node name="WindowStripRight" type="MeshInstance3D" parent="Station1" unique_id=1243931820]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 7.62, 0.2, 0)
 mesh = SubResource("BoxMesh_window")
 
-[node name="BeaconFore" type="MeshInstance3D" parent="Station1"]
+[node name="BeaconFore" type="MeshInstance3D" parent="Station1" unique_id=1292373349]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.9, -11.5)
 mesh = SubResource("SphereMesh_beacon")
 
-[node name="BeaconForeLight" type="OmniLight3D" parent="Station1/BeaconFore"]
+[node name="BeaconForeLight" type="OmniLight3D" parent="Station1/BeaconFore" unique_id=666896063]
 light_color = Color(1, 0.25, 0.2, 1)
 light_energy = 3.0
 omni_range = 14.0
 
-[node name="BeaconAft" type="MeshInstance3D" parent="Station1"]
+[node name="BeaconAft" type="MeshInstance3D" parent="Station1" unique_id=1434769332]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.9, 11.5)
 mesh = SubResource("SphereMesh_beacon")
 
-[node name="BeaconAftLight" type="OmniLight3D" parent="Station1/BeaconAft"]
+[node name="BeaconAftLight" type="OmniLight3D" parent="Station1/BeaconAft" unique_id=555391346]
 light_color = Color(1, 0.25, 0.2, 1)
 light_energy = 3.0
 omni_range = 14.0
 
-[node name="ApproachLight" type="OmniLight3D" parent="Station1"]
+[node name="ApproachLight" type="OmniLight3D" parent="Station1" unique_id=2142492463]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -3, -15.5)
 light_color = Color(1, 0.72, 0.35, 1)
 light_energy = 4.0
 omni_range = 26.0
 
-[node name="HullFlood" type="OmniLight3D" parent="Station1"]
+[node name="HullFlood" type="OmniLight3D" parent="Station1" unique_id=1876061333]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -6)
 light_color = Color(0.75, 0.82, 1, 1)
 light_energy = 1.6
 omni_range = 34.0
 
-[node name="TunnelLight" type="OmniLight3D" parent="Station1"]
+[node name="TunnelLight" type="OmniLight3D" parent="Station1" unique_id=343805734]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -2.4, -12.5)
 light_energy = 1.6
 omni_range = 8.0
 
-[node name="WallAft" type="MeshInstance3D" parent="Station1"]
+[node name="WallAft" type="MeshInstance3D" parent="Station1" unique_id=1639138124]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.6, 11.5)
 mesh = SubResource("BoxMesh_wallz")
 
-[node name="WallAftShape" type="CollisionShape3D" parent="Station1"]
+[node name="WallAftShape" type="CollisionShape3D" parent="Station1" unique_id=2048153338]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.6, 11.5)
 shape = SubResource("BoxShape3D_wallz")
 
-[node name="PortMarker" type="MeshInstance3D" parent="Station1"]
+[node name="PortMarker" type="MeshInstance3D" parent="Station1" unique_id=148821483]
 transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, -3, -14.05)
 mesh = SubResource("TorusMesh_port")
 
-[node name="DeckLight" type="OmniLight3D" parent="Station1"]
+[node name="DeckLight" type="OmniLight3D" parent="Station1" unique_id=1163102537]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2, 0)
 light_energy = 2.5
 omni_range = 26.0
 
-[node name="BoardControl" type="Area3D" parent="Station1"]
+[node name="BoardControl" type="Area3D" parent="Station1" unique_id=1168810795]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -3, -10.2)
 collision_layer = 4
 collision_mask = 0
 script = ExtResource("2_inter")
 prompt = "Board ship"
 
-[node name="Shape" type="CollisionShape3D" parent="Station1/BoardControl"]
+[node name="Shape" type="CollisionShape3D" parent="Station1/BoardControl" unique_id=245398013]
 shape = SubResource("BoxShape3D_reach")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1313021977]
 environment = SubResource("Environment_ig7tw")
 
 [node name="Ship" parent="." unique_id=2122797206 node_paths=PackedStringArray("_astronaut") instance=ExtResource("5_ship")]
-fuel_seconds = 900.0
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1000)
 _astronaut = NodePath("../Astronaut")
+fuel_seconds = 900.0
 
 [node name="Astronaut" parent="." unique_id=1118900575 node_paths=PackedStringArray("_ship") instance=ExtResource("6_astro")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1000)
@@ -708,6 +696,5 @@ offset_bottom = 53.0
 theme_override_font_sizes/font_size = 30
 text = "Exit"
 
-[connection signal="pressed" from="HUD/button_quit" to="." method="_on_button_quit_pressed"]
-
 [connection signal="activated" from="Station1/BoardControl" to="Station1" method="_on_board_activated"]
+[connection signal="pressed" from="HUD/button_quit" to="." method="_on_button_quit_pressed"]

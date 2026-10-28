@@ -1,8 +1,8 @@
 [gd_scene format=3 uid="uid://bf7vn77fyd3ra"]
 
-[ext_resource type="Script" uid="uid://bj432qficp2xb" path="res://ship.gd" id="1_ship"]
-[ext_resource type="Script" path="res://interactable.gd" id="2_inter"]
-[ext_resource type="Shader" path="res://shaders/hull.gdshader" id="9_hull"]
+[ext_resource type="Script" uid="uid://bj432qficp2xb" path="res://sim/ship.gd" id="1_ship"]
+[ext_resource type="Script" uid="uid://bfgg8dffornks" path="res://sim/interactable.gd" id="2_inter"]
+[ext_resource type="Shader" uid="uid://fremmfs2ybhc" path="res://sim/shaders/hull.gdshader" id="9_hull"]
 
 [sub_resource type="ShaderMaterial" id="Mat_hull"]
 shader = ExtResource("9_hull")

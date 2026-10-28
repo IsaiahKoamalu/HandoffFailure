@@ -502,7 +502,7 @@ Three things to know about it:
   boundary.
 
   The equilibrium above still applies while cruising — the settled error is
-  `g / _assist_strength` at wherever the ship is. `rl/cruise_check.tscn` asserts
+  `g / _assist_strength` at wherever the ship is. `rl/checks/cruise_check.tscn` asserts
   exactly that, and holds at 5.37 against a predicted 5.71 near a planet and
   0.07 against 0.07 in deep space.
 
@@ -631,7 +631,7 @@ Four shells and a shader, none of which touch the height field:
   *maximum* on the outer silhouette. Every planet therefore wore a hard-edged
   bubble with a visible gap between the terrain and the shell, and a wash of
   colour over the disc that desaturated the whole world. Photographed before and
-  after with `rl/portrait_check.tscn`; the difference is not subtle.
+  after with `rl/checks/portrait_check.tscn`; the difference is not subtle.
 
   **`cull_front`, so the inside of the shell is shaded.** From outside that is
   the far hemisphere, which the planet's own depth rejects over the disc and
@@ -829,9 +829,9 @@ once the velocity error is inside `CRUISE_TRIM_BAND`. The assist is uncapped and
 free, so commanding a distant cruise would accelerate the ship for nothing;
 engines do the work and burn for it.
 
-`rl/journey_check.tscn` flies the whole thing end to end — deep space to a
+`rl/checks/journey_check.tscn` flies the whole thing end to end — deep space to a
 planet, planet to planet, and both refusals — through the real `main.tscn` ship.
-`rl/dock_check.tscn` does the same for a station, and then walks the astronaut
+`rl/checks/dock_check.tscn` does the same for a station, and then walks the astronaut
 around inside it.
 
 ## Docking and stations
@@ -911,7 +911,7 @@ being:
   cabin floor. Anywhere else and the join is a step the astronaut has to climb.
   Both decks also have to reach their own port plane: the ship's stopped 0.1
   short of the ship's, which left a slot across the full width of the threshold
-  even with the ports perfectly mated. `rl/dock_check.tscn` now casts a grid of
+  even with the ports perfectly mated. `rl/checks/dock_check.tscn` now casts a grid of
   441 rays down through the doorway on the astronaut's own collision mask —
   the hull it may not collide with is exactly the hull that cannot hold it up —
   and requires every one of them to find floor.
@@ -974,7 +974,7 @@ that as `DITCHED`, observes the land field, and spawns mostly over ground.
 asked for a hundred continents on one sphere. That is not terrain, it is static,
 and it measured 51 and 40 degrees of mean ground slope on Planets 2 and 3. Back
 at 0.95-1.5 it makes continents again and the mean slope is 5-7 degrees.
-`rl/terrain_report.tscn` prints land fraction, largest connected landmass,
+`rl/checks/terrain_report.tscn` prints land fraction, largest connected landmass,
 relief and slope for every planet, which is how those numbers were arrived at
 rather than guessed.
 

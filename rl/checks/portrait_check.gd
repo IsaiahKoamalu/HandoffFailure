@@ -3,7 +3,7 @@ extends Node3D
 ## Photograph every world in the system, so a change to how a planet looks can
 ## be looked at rather than argued about.
 ##
-##     Godot --path . res://rl/portrait_check.tscn -- --out=/tmp/shots --dist=2.5
+##     Godot --path . res://rl/checks/portrait_check.tscn -- --out=/tmp/shots --dist=2.5
 ##
 ## Not headless: headless has no renderer, and this is entirely about what is on
 ## screen. Not through the cockpit either, the way view_check is — the hull glass
@@ -14,7 +14,7 @@ extends Node3D
 ## flat disc with no terminator, and from behind gives a silhouette. Both hide
 ## exactly what a change to shading is meant to alter.
 
-const MAIN_SCENE := "res://main.tscn"
+const MAIN_SCENE := "res://sim/main.tscn"
 
 var _out: String = "."
 ## Distance from the surface, in planet radii.

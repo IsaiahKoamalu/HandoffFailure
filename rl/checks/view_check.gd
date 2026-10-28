@@ -3,12 +3,12 @@ extends Node3D
 ## Render one frame from the pilot's seat and save it, so a change to the hull
 ## can be looked at rather than argued about.
 ##
-##     Godot --path . res://rl/view_check.tscn -- --out=/tmp/cockpit.png
+##     Godot --path . res://rl/checks/view_check.tscn -- --out=/tmp/cockpit.png
 ##
 ## Not headless: headless has no renderer and this is entirely about what is on
 ## screen. It quits itself after writing the file.
 
-const MAIN_SCENE := "res://main.tscn"
+const MAIN_SCENE := "res://sim/main.tscn"
 
 var _out: String = "cockpit.png"
 ## Hide the nose panels, for a reference frame of the view without them.

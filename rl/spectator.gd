@@ -140,7 +140,7 @@ func _pick_focus() -> int:
 	var best: int = _focus
 	var best_score: float = INF
 	for i in _env.ships.size():
-		var frame: Array = LandingEnv.surface_frame(
+		var frame: Array = Surface.surface_frame(
 			_env.ships[i].global_position, _env.targets[i]
 		)
 		var altitude: float = frame[0]
@@ -156,7 +156,7 @@ func _pick_focus() -> int:
 func _track(delta: float) -> void:
 	var ship: Ship = _env.ships[_focus]
 	var planet: Planet = _env.targets[_focus]
-	var frame: Array = LandingEnv.surface_frame(ship.global_position, planet)
+	var frame: Array = Surface.surface_frame(ship.global_position, planet)
 	var altitude: float = maxf(frame[0], 0.0)
 	var up: Vector3 = frame[1]
 
@@ -201,7 +201,7 @@ func _track(delta: float) -> void:
 func _draw_readout() -> void:
 	var ship: Ship = _env.ships[_focus]
 	var planet: Planet = _env.targets[_focus]
-	var frame: Array = LandingEnv.surface_frame(ship.global_position, planet)
+	var frame: Array = Surface.surface_frame(ship.global_position, planet)
 	var altitude: float = frame[0]
 	var up: Vector3 = frame[1]
 	var relative: Vector3 = planet.get_relative_velocity_to_surface(
@@ -225,7 +225,7 @@ func _draw_readout() -> void:
 		maxf(align, 0.0), 1.0, "%8.3f %s" % [align, "ok" if align >= _env.touchdown_align else "  "]
 	))
 	lines.append("  throttle   %s" % _bar_text(ship.throttle, 1.0, "%8.2f" % ship.throttle))
-	var land := LandingEnv.land_frame(ship.global_position, planet)
+	var land := Surface.land_frame(ship.global_position, planet)
 	var landness: float = float(land[0])
 	lines.append("  ground     %s" % (
 		"[color=#7fe08a]LAND[/color]" if landness > 0.0 else "[color=#5aa8d8]WATER[/color]"
@@ -327,7 +327,7 @@ func _strip_text() -> String:
 	for i in shown:
 		var ship: Ship = _env.ships[i]
 		var planet: Planet = _env.targets[i]
-		var frame: Array = LandingEnv.surface_frame(ship.global_position, planet)
+		var frame: Array = Surface.surface_frame(ship.global_position, planet)
 		var altitude: float = frame[0]
 		var descent: float = -planet.get_relative_velocity_to_surface(
 			ship.global_position, ship.linear_velocity

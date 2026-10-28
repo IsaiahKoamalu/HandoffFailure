@@ -8,7 +8,7 @@ extends Node3D
 ## planet, or out between bodies — points it at a destination with [Tab]'s
 ## target, and asks whether the ship gets there and lands.
 ##
-##     Godot --headless --fixed-fps 60 --path . res://rl/journey_check.tscn
+##     Godot --headless --fixed-fps 60 --path . res://rl/checks/journey_check.tscn
 ##
 ## It goes through ShipAutopilot rather than around it, and through the real
 ## main.tscn ship. What it is really testing is the handover: transit has to
@@ -16,7 +16,7 @@ extends Node3D
 ## attitude the policy has seen. A journey that arrives outside that
 ## distribution fails here and nowhere else in rl/.
 
-const MAIN_SCENE := "res://main.tscn"
+const MAIN_SCENE := "res://sim/main.tscn"
 const MAX_TICKS: int = 70000
 
 var _ship: Ship
@@ -89,9 +89,9 @@ func _journey(label: String, from: Vector3, to: Planet) -> void:
 		top_speed = maxf(top_speed, _ship.linear_velocity.length())
 
 	var landed: bool = autopilot.status == "landed"
-	var frame := LandingEnv.surface_frame(_ship.global_position, to)
-	var on_site: bool = LandingEnv.is_on_target_site(_ship.global_position, to)
-	var dry: bool = LandingEnv.is_over_land(_ship.global_position, to)
+	var frame := Surface.surface_frame(_ship.global_position, to)
+	var on_site: bool = Surface.is_on_target_site(_ship.global_position, to)
+	var dry: bool = Surface.is_over_land(_ship.global_position, to)
 	var where: String = "on target" if on_site else ("wrong continent" if dry else "in the sea")
 	if not (landed and on_site):
 		_failures += 1

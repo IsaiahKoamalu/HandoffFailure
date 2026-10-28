@@ -12,7 +12,7 @@ extends Node3D
 ## line. A named shot is reproducible across a change -- which is the entire
 ## point of having it -- and a hand-typed camera position is not.
 
-const MAIN_SCENE := "res://main.tscn"
+const MAIN_SCENE := "res://sim/main.tscn"
 
 ## Shots that frame a specific planet take it by index into SolarSystem.Planets.
 ## -1 means the first one with terrain, which skips the star -- the star is a

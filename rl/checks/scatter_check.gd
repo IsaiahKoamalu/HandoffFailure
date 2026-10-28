@@ -2,7 +2,7 @@ extends Node3D
 
 ## Do the boulders stay where they were put?
 ##
-##     Godot.exe --fixed-fps 60 --path . res://rl/scatter_check.tscn
+##     Godot.exe --fixed-fps 60 --path . res://rl/checks/scatter_check.tscn
 ##
 ## Not headless: scatter is skipped without a renderer, because it is decoration
 ## and nothing that runs headless can see it.
@@ -15,7 +15,7 @@ extends Node3D
 ## share. Streaming away and back to a byte-identical centre reproduces even a
 ## patch-local grid, and a check that only did that would pass on the bug.
 
-const MAIN_SCENE := "res://main.tscn"
+const MAIN_SCENE := "res://sim/main.tscn"
 ## Fraction of a patch to shift by. Small enough that the two patches overlap
 ## heavily, large enough that a patch-local grid lands somewhere else entirely.
 const SHIFT: float = 0.25

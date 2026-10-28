@@ -9,16 +9,16 @@ the simulator still behaves.
 | --- | --- |
 | `autopilot.gd` | The hand-written analytic controller. Flies transit, then descent, on `[P]`. Supplies the baselines, and is the predecessor at the second seam. |
 | `neural_pilot.gd` | Forward pass of a trained network in GDScript. Loads `runs/landing/policy.json`, and degrades to "untrained" when there is none. |
-| `spectator.gd` | Free camera for watching a run. |
-| `autoland_check.tscn` | Lands repeatedly under a policy and reports the rate. |
-| `cruise_check.tscn` | Checks the flight assist can hold a velocity between bodies. |
-| `journey_check.tscn` | Flies whole journeys, planet to planet. |
-| `dock_check.tscn` | Docks at a station, checks the capture is smooth, walks the astronaut around it. |
-| `surface_check.tscn` | Lands at five sites and checks the ship parks and stays parked. |
-| `scatter_check.tscn` | Checks the boulders return to the same places when terrain streams. |
-| `view_check.tscn` | Renders one frame from the pilot's seat. |
-| `portrait_check.tscn` | Photographs every world, from orbit and from the ground. |
-| `terrain_report.tscn` | Prints what the terrain generator produced per body. |
+| `spectator.gd` | Free camera for watching a run. Does not compile until the training host exists: it reads the old environment's ships, targets and outcome codes. |
+| `checks/autoland_check.tscn` | Lands repeatedly under a policy and reports the rate. |
+| `checks/cruise_check.tscn` | Checks the flight assist can hold a velocity between bodies. |
+| `checks/journey_check.tscn` | Flies whole journeys, planet to planet. |
+| `checks/dock_check.tscn` | Docks at a station, checks the capture is smooth, walks the astronaut around it. |
+| `checks/surface_check.tscn` | Lands at five sites and checks the ship parks and stays parked. |
+| `checks/scatter_check.tscn` | Checks the boulders return to the same places when terrain streams. |
+| `checks/view_check.tscn` | Renders one frame from the pilot's seat. |
+| `checks/portrait_check.tscn` | Photographs every world, from orbit and from the ground. |
+| `checks/terrain_report.tscn` | Prints what the terrain generator produced per body. |
 
 ## To be written
 
@@ -28,6 +28,20 @@ skills do not share an interface: they read different numbers of inputs, disagre
 whether the auto-stabiliser is on, and assume different limits on how long a run may
 last. Reconciling that mid-flight is the mission runner's job, and both of those ship
 settings are already settable at runtime, so none of it needs a simulator change.
+
+## What the autopilot expects of the landing task
+
+`autopilot.gd` finds the landing task at runtime by its class name, `LandingEnv`, rather
+than referring to it directly, so the game compiles on a checkout where the task has not
+been written yet. The new task must keep that name and provide `OBS_SIZE` and a static
+`build_observation(ship, planet, progress, into, at)`. Without it the HUD reads
+"no landing task". Geometry (altitude, up, land under the ship, bearing to the target
+continent) comes from `Surface` in `sim/surface.gd`, and the task should use it too
+rather than computing any of it a second way.
+
+The autopilot also refuses to engage unless a landing policy is installed. That blocks
+the analytic transit and docking phases too, which the baselines need. Changing it is a
+change to apparatus and is logged in `runs/README.md` when it happens.
 
 ## Verify before believing
 
