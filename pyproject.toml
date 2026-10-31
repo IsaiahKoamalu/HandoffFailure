@@ -1,0 +1,11 @@
+[project]
+name = "handofffailure"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "gymnasium>=1.4.0",
+    "numpy>=2.5.4",
+    "torch>=2.15.0",
+]

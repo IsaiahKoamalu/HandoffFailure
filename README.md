@@ -27,11 +27,26 @@ controller the ship flies on `[P]`, and `rl/neural_pilot.gd`, which runs a train
 network inside the engine. The analytic controller supplies the baselines, and it is the
 predecessor at the second seam.
 
-**Written for this project**, and not yet present in this repository:
+**Adapted, not written.** PPO comes from CleanRL's single-file
+[`ppo_continuous_action.py`](https://github.com/vwxyzjn/cleanrl/blob/master/cleanrl/ppo_continuous_action.py)
+(MIT licence, commit `35896b1`), on the instructor's recommendation. It is copied into
+`python/` with its source noted at the top, and changed there in four places, each of
+which is this project's work:
 
-| Component | Where it will live |
+- The environment is one Gymnasium `VectorEnv` over the bridge, with every ship in one
+  Godot process, instead of `SyncVectorEnv` over single environments.
+- Truncated episodes bootstrap from their final observation. CleanRL treats a time-limit
+  cutoff as terminal, which is wrong for episodes this long.
+- The observation normaliser is replaced by one that matches `rl/neural_pilot.gd`
+  exactly, is frozen at evaluation, and is saved beside the weights. That saved record
+  is what E3 measures.
+- The trained policy is exported as the `policy.json` that `rl/neural_pilot.gd` loads.
+
+**Written for this project:**
+
+| Component | Where it lives |
 | --- | --- |
-| PPO — clipped surrogate, GAE, actor-critic, observation normaliser | `python/` |
+| Changes to CleanRL's PPO, listed above | `python/` |
 | Environment wrapper and the JSON-over-TCP bridge client | `python/` |
 | Evaluation harness | `python/` |
 | Task definition — orbit insertion | `rl/` |
@@ -84,8 +99,8 @@ See `rl/README.md`.
 ## Python environment
 
 ```bash
-python3.12 -m venv .venv
-./.venv/bin/python -m pip install -r requirements.txt
+uv sync
+uv run python python/env_test.py
 ```
 
 ## Results

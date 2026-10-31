@@ -1,7 +1,0 @@
-# The trainer runs on CPU. The network is 64 units wide and the bottleneck is
-# the physics, not the gradients, so a GPU buys nothing here.
-#
-#   python3.12 -m venv .venv
-#   ./.venv/bin/python -m pip install -r requirements.txt
-numpy
-torch

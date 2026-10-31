@@ -17,11 +17,16 @@ it slips there too.
 orbital propagation, and `sim/surface.gd`, the shared surface geometry. No feature work on the simulator is in scope. If I think I need a
 simulator change, that is a signal the task definition is wrong, not the sim.
 
-**Written for this project.** PPO, the environment wrapper and bridge client, both task
-definitions, the mission runner, the z-score logger, the evaluation harness. The old
-code in `python/` and `rl/*_env.gd` is a reference implementation from before the
-project — it is allowed to be read, not copied. Keeping it on disk is honest; citing it
-as this project's work is not.
+**Adapted, not written.** PPO is CleanRL's `ppo_continuous_action.py`, on the
+instructor's recommendation, copied into `python/` with attribution. The changes to it
+— vector environment, truncation bootstrap, normaliser, policy export — are this
+project's work; the rest of the file is not, and is not claimed.
+
+**Written for this project.** The environment wrapper and bridge client, both task
+definitions, the mission runner, the z-score logger, the evaluation harness. The earlier
+trainer and task definitions in git history are a reference implementation from before
+the project — they are allowed to be read, not copied. Citing them as this project's
+work is not.
 
 **Freeze points.** Once E1 is measured, the two task definitions are frozen: success
 criteria, reward terms, episode length. Any change after that date is reported as its
@@ -41,8 +46,10 @@ week 7, so a week with no entry is a week that cannot be written up.
 
 Only three things can sink this:
 
-1. **PPO that is subtly wrong.** Mitigated by reproducing a known answer in week 1
-   (landing at ≈92%) before trusting the implementation on anything new.
+1. **PPO that is subtly wrong.** Using CleanRL narrows this to the changes made to it —
+   the truncation bootstrap and the normaliser most of all. Mitigated by the unit tests
+   and by reproducing a known answer in week 1 (landing at ≈92%) before trusting the
+   result on anything new.
 2. **The mission runner.** It is the only genuinely new component. It is scheduled in
    week 3 and nothing about it is familiar.
 3. **No spread in the handoff states.** If orbit insertion always delivers nearly the
@@ -55,18 +62,25 @@ Everything else is schedule padding.
 
 ## Week of Oct 26 — the trainer, and proof that it works
 
-Goal: a PPO implementation I can trust, demonstrated against an answer I already know.
+Goal: a trainer I can trust, demonstrated against an answer I already know.
 
-- [ ] Bridge client and environment wrapper. JSON over TCP, 32 ships, `--repeat 6`.
+- [ ] Bridge client and environment wrapper. JSON over TCP, 32 ships, `--repeat 6`. The
+      wrapper is a Gymnasium 1.x `VectorEnv` with same-step autoreset, so the host's
+      own resets and its `final_obs` map onto it directly.
 - [ ] Smoke test that runs in under a minute: the socket answers, a random policy
       crashes nearly every episode, throughput is in the expected range.
-- [ ] PPO: clipped surrogate, GAE, actor-critic, running observation normaliser whose
-      mean and variance are saved next to the weights. **That saved record is the
-      measurement instrument for E3, so build it now, not in week 3.**
+- [ ] PPO: copy CleanRL's `ppo_continuous_action.py` into `python/` with attribution,
+      replace its environment setup with the wrapper, and replace its episode logging
+      with outcome counts.
+- [ ] Observation normaliser that matches `rl/neural_pilot.gd` (std ≤ 1e-3 counts as
+      constant, clamp to ±10), frozen at evaluation, with mean and std saved next to the
+      weights in `policy.json`. **That saved record is the measurement instrument for
+      E3, so build it now, not in week 3.**
 - [ ] Unit test — truncation. A time-limit cutoff is not a terminal state; the value
-      estimate must still be bootstrapped. Work one episode by hand and assert against
-      it. Getting this backwards previously produced an advantage of +45.835 where the
-      correct value was −4.015.
+      estimate must still be bootstrapped. CleanRL ORs terminations and truncations
+      together, so this tests the change that fixes it. Work one episode by hand and
+      assert against it. Getting this backwards previously produced an advantage of
+      +45.835 where the correct value was −4.015.
 - [ ] Unit test — reward scale. Assert at startup that a maximum-length episode cannot
       cost more in per-step charges than the smallest failure penalty. Otherwise quitting
       on purpose is the cheapest move. Previously: 0.02/tick × 18,000 = 360, against a
@@ -82,7 +96,12 @@ Reference: 92.5% landed over 400 episodes at seed 7 with `--repeat 6`.
 **Traps.** Run `--headless --import` after adding any script with a `class_name`, or the
 headless trainer parses nothing, never replies, and simply hangs. Freeze the normaliser
 at evaluation time — normaliser drift alone moves the score, which was confirmed by
-reproducing it with the learning rate set to zero.
+reproducing it with the learning rate set to zero. Do not keep CleanRL's Gymnasium
+wrappers: its observation normaliser divides by `sqrt(var + 1e-8)`, which turns a
+constant channel into huge values where `neural_pilot.gd` reads it as unit scale, and its
+reward normaliser changes the reward scale the unit test asserts on. CleanRL pins
+`gymnasium==0.29.1`; this project uses 1.x, which only touches the environment setup and
+logging that are being replaced anyway.
 
 ---
 
