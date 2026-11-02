@@ -15,6 +15,7 @@ from pathlib import Path
 
 import numpy as np
 from godot_env import GodotVectorEnv
+from launch import connect, launch_host
 
 ROOT = Path(__file__).resolve().parent.parent
 SHIPS = 32
@@ -24,32 +25,11 @@ MAX_STEPS = 600 # short episodes, so plenty end inside to test
 STEPS = 400
 TIME_LIMIT = 60.0
 
-def launch_host():
-    godot = os.environ.get("GODOT")
-    if not godot:
-        sys.exit("GODOT is not set; see 'Running the simulator' in README.md")
-    return subprocess.Popen(
-        [godot, "--headless", "--fixed-fps", "60", "--path", str(ROOT),
-         "res://rl/train/host.tscn"]
-    )
-
-def connect(host, timeout=30.0):
-    deadline = time.monotonic() + timeout
-    while True:
-        try:
-            return GodotVectorEnv(num_envs=SHIPS, seed=SEED, repeat=REPEAT, max_steps=MAX_STEPS)
-        except ConnectionRefusedError:
-            if host.poll() is not None:
-                sys.exit(f"host exited with code {host.returncode} before it was listening")
-            if time.monotonic() > deadline:
-                sys.exit(f"host was not listening after {timeout:.0f} s")
-            time.sleep(0.2)
-
 def main():
     started = time.monotonic()
     host = launch_host()
     try:
-        env = connect(host)
+        env = connect(host, SHIPS, SEED, REPEAT, MAX_STEPS)
         env.action_space.seed(SEED)
         obs, _ = env.reset(seed=SEED)
         if obs.shape != env.observation_space.shape:
