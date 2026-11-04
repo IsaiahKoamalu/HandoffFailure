@@ -31,7 +31,21 @@ Do not trust a summary in this file for status. At the start of a session, check
   Gymnasium `VectorEnv` over the bridge, truncation bootstrapped from `final_obs`
   (CleanRL ORs terminations and truncations), a normaliser matching
   `rl/neural_pilot.gd`, and `policy.json` export. Do not reintroduce CleanRL's Gymnasium
-  wrappers.
+  wrappers. The header of `python/ppo.py` carries CleanRL's MIT notice and the list of
+  changes made so far; keep that list matching the diff from `4358005`, the unmodified
+  copy.
+- **The truncation fix keeps CleanRL's OR.** With same-step autoreset, `next_obs` after
+  a truncation belongs to the next episode, so GAE must still cut the chain at every
+  ending. The fix adds `gamma * V(final_obs)` to the truncated ships' training reward
+  instead. Removing the OR is a different bug, not the fix. The step-by-step plan and
+  the hand-worked test numbers are in `docs/TODO.md`.
+- **Runs** go to `rl/runs/<exp>__<seed>__<unix time>/`, each with a `run.json` written
+  before training starts: command, every argument, commit, and what the host built,
+  `obs_names` included. `rl/runs/*/` is gitignored; a run that is reported is added
+  deliberately.
+- **`python/launch.py`** starts the headless host and connects to it, for both
+  `ppo.py` and `env_test.py`. The port is fixed at 11008 in `rl/train/host.gd`, so there
+  is no port argument.
 - **Gymnasium 1.x**, not CleanRL's 0.29 pin. The env uses `AutoresetMode.SAME_STEP`:
   the host resets finished ships itself and sends their last observation in
   `final_obs`.
@@ -46,6 +60,10 @@ Do not trust a summary in this file for status. At the start of a session, check
 
 - Godot is not on the `PATH` everywhere. Use `"$GODOT"` as in `README.md`; if it is
   unset, ask where the binary is rather than guessing.
+- The project is Godot 4.7 (`project.godot`). An older engine opens it, and may
+  rewrite `.godot/`, so check `"$GODOT" --version` before running anything new.
+- On Windows `GODOT` is a user variable set with `setx`, which only reaches processes
+  started afterwards. A shell that predates it sees it empty until VS Code restarts.
 - Python runs through uv: `uv run python ...`, the same on every machine.
 - Anything specific to one machine goes in `CLAUDE.local.md`, which is not committed.
 
@@ -56,6 +74,10 @@ Do not trust a summary in this file for status. At the start of a session, check
   or the headless host fails to parse it and hangs without saying why.
 - Godot's `JSON.stringify` writes a `PackedByteArray` as a string, not a list. Send
   boolean flags as `Array[bool]`.
+- `python/env_test.py` caps episodes at 600 ticks, too short for most ships to reach
+  the ground, so its PASS does not show that crash detection works. Pass
+  `--max-steps 600` to a short `ppo.py` check for the same reason in reverse: at
+  27,000 ticks a 20,000-step run sees no episode end.
 - `rl/checks/scatter_check.tscn` and site 1 of `rl/checks/surface_check.tscn` fail on
   the pre-project code too. They are logged in `rl/runs/README.md` and are not to be
   fixed.
