@@ -1,8 +1,52 @@
-# docs and experiment results can be found at https://docs.cleanrl.dev/rl-algorithms/ppo/#ppo_continuous_actionpy
+"""PPO for continuous actions, trained against the headless Godot host.
+
+Adapted from CleanRL's ppo_continuous_action.py:
+    https://github.com/vwxyzjn/cleanrl/blob/35896b1/cleanrl/ppo_continuous_action.py
+    docs: https://docs.cleanrl.dev/rl-algorithms/ppo/#ppo_continuous_actionpy
+
+Changes made for this project (everything else is CleanRL's):
+    - The environment is GodotVectorEnv, one process simulating every ship,
+      launched and connected through launch.py, instead of SyncVectorEnv.
+    - CleanRL's Gymnasium wrappers are removed, observation and reward
+      normalisation among them.
+    - Episode logging counts outcomes as the host reports them.
+    - Each run gets its own directory under rl/runs/, with a run.json recording
+      the command, every argument, the commit and what the host built.
+    - The wandb, video, evaluation and Hugging Face code is removed.
+
+----------------------------------------------------------------------------
+MIT License
+
+Copyright (c) 2019 CleanRL developers
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+"""
+
+
 import os
 import random
 import time
-from dataclasses import dataclass
+import json
+import sys
+import subprocess
+import collections
+from dataclasses import asdict, dataclass
 
 import gymnasium as gym
 import numpy as np
@@ -13,7 +57,8 @@ import tyro
 from torch.distributions.normal import Normal
 from torch.utils.tensorboard import SummaryWriter
 
-from launch import connect, launch_host
+from launch import connect, launch_host, ROOT
+
 
 
 @dataclass
@@ -68,9 +113,7 @@ class Args:
     """number of times to repeat the same experiment"""
     max_steps: int = 27000
     """maximum number of steps per episode"""
-    port: int = 11008
-    """port to listen on"""
-
+   
     # to be filled in runtime
     batch_size: int = 0
     """the batch size (computed in runtime)"""
@@ -124,8 +167,10 @@ if __name__ == "__main__":
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
     args.num_iterations = args.total_timesteps // args.batch_size
     run_name = f"{args.exp_name}__{args.seed}__{int(time.time())}"
+    run_dir = ROOT / "rl" / "runs" / run_name
+    run_dir.mkdir(parents=True)
 
-    writer = SummaryWriter(f"runs/{run_name}")
+    writer = SummaryWriter(str(run_dir))
     writer.add_text(
         "hyperparameters",
         "|param|value|\n|-|-|\n%s" % ("\n".join([f"|{key}|{value}|" for key, value in vars(args).items()])),
@@ -139,15 +184,24 @@ if __name__ == "__main__":
 
     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
 
-    # env setup
-    # envs = gym.vector.SyncVectorEnv(
-    #     [make_env(args.env_id, i, args.capture_video, run_name, args.gamma) for i in range(args.num_envs)]
-    # )
-
     # env setup: one headless Godot process simulating every ship
     host = launch_host()
     try:
         envs = connect(host, num_envs=args.num_envs, seed=args.seed, repeat=args.repeat, max_steps=args.max_steps)
+
+        record = {
+            "command": sys.argv,
+            "args": asdict(args),
+            "task": envs.task,
+            "obs_size": envs.single_observation_space.shape[0],
+            "act_size": envs.single_action_space.shape[0],
+            "obs_names": envs.obs_names,
+            "outcomes": envs.outcomes,
+            "success": envs.success,
+            "commit": subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, cwd=ROOT, check=True).stdout.strip()
+        }
+        with open(run_dir / "run.json", "w") as f:
+            json.dump(record, f, indent=2)
 
         assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
 
@@ -169,12 +223,19 @@ if __name__ == "__main__":
         next_obs = torch.Tensor(next_obs).to(device)
         next_done = torch.zeros(args.num_envs).to(device)
 
+        running_return = np.zeros(args.num_envs)
+        running_length = np.zeros(args.num_envs, dtype=int)
+
         for iteration in range(1, args.num_iterations + 1):
             # Annealing the rate if instructed to do so.
             if args.anneal_lr:
                 frac = 1.0 - (iteration - 1.0) / args.num_iterations
                 lrnow = frac * args.learning_rate
                 optimizer.param_groups[0]["lr"] = lrnow
+
+            # per iteration counters
+            endings = collections.Counter()
+            finished_returns, finished_lengths = [], []
 
             for step in range(0, args.num_steps):
                 global_step += args.num_envs
@@ -194,12 +255,15 @@ if __name__ == "__main__":
                 rewards[step] = torch.tensor(reward).to(device).view(-1)
                 next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(next_done).to(device)
 
-                if "final_info" in infos:
-                    for info in infos["final_info"]:
-                        if info and "episode" in info:
-                            print(f"global_step={global_step}, episodic_return={info['episode']['r']}")
-                            writer.add_scalar("charts/episodic_return", info["episode"]["r"], global_step)
-                            writer.add_scalar("charts/episodic_length", info["episode"]["l"], global_step)
+                # counting each episode that ended in this step, by how it ended
+                running_return += reward
+                running_length += 1
+                for i in np.flatnonzero(infos["_final_obs"]):
+                    endings[envs.outcomes[int(infos["outcome"][i])]] += 1
+                    finished_returns.append(running_return[i])
+                    finished_lengths.append(running_length[i])
+                    running_return[i] = 0.0
+                    running_length[i] = 0
 
             # bootstrap value if not done
             with torch.no_grad():
@@ -292,8 +356,21 @@ if __name__ == "__main__":
             writer.add_scalar("losses/approx_kl", approx_kl.item(), global_step)
             writer.add_scalar("losses/clipfrac", np.mean(clipfracs), global_step)
             writer.add_scalar("losses/explained_variance", explained_var, global_step)
-            print("SPS:", int(global_step / (time.time() - start_time)))
             writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
+
+            #TODO: log once per iteration, besides the other `writer.add_scalar` calls
+            episodes = sum(endings.values())
+            success_name = envs.outcomes[envs.success]
+            writer.add_scalar("charts/episodes", episodes, global_step)
+            if episodes:
+                for name in envs.outcomes.values():
+                    if name != "running":
+                        writer.add_scalar(f"outcomes/{name}", endings[name] / episodes, global_step)
+                writer.add_scalar("charts/episodic_return", np.mean(finished_returns), global_step)
+                writer.add_scalar("charts/episodic_length", np.mean(finished_lengths), global_step)
+            rate = f"{endings[success_name] / episodes:.1%}" if episodes else "-"
+            print(f"iter {iteration}/{args.num_iterations}  episodes {episodes}  {success_name} {rate}  "
+                  f"explained_var {explained_var:.3f}  SPS {int(global_step / (time.time() - start_time))}")
 
         if args.save_model:
             model_path = f"runs/{run_name}/{args.exp_name}.cleanrl_model"

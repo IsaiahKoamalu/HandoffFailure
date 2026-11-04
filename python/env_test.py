@@ -15,7 +15,7 @@ from pathlib import Path
 
 import numpy as np
 from godot_env import GodotVectorEnv
-from launch import connect, launch_host
+from launch import connect, launch_host, ROOT
 
 ROOT = Path(__file__).resolve().parent.parent
 SHIPS = 32
