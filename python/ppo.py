@@ -160,6 +160,34 @@ class Agent(nn.Module):
             action = probs.sample()
         return action, probs.log_prob(action).sum(1), probs.entropy().sum(1), self.critic(x)
 
+def compute_gae(rewards, values, dones, next_value, next_done, gamma, gae_lambda):
+    """CleanRL's GAE, moved out of the training loop so that it can be
+    unit tested.
+    """
+    num_steps = rewards.shape[0]
+    advantages = torch.zeros_like(rewards)
+    lastgaelam = 0
+    for t in reversed(range(num_steps)):
+        if t == num_steps - 1:
+            nextnonterminal = 1.0 - next_done
+            nextvalues = next_value
+        else:
+            nextnonterminal = 1.0 - dones[t + 1]
+            nextvalues = values[t + 1]
+        delta = rewards[t] + gamma * nextvalues * nextnonterminal - values[t]
+        advantages[t] = lastgaelam = delta + gamma * gae_lambda * nextnonterminal * lastgaelam
+    return advantages, advantages + values
+
+def bootstrap_truncated(reward, truncations, final_values, gamma):
+    """Adding the discounted value of each truncated ship's last observation
+    to its reward.
+
+    Time limit is not an ending. GAE still cuts at every episode end, so the
+    value has to come in through the reward.
+    """
+    reward = reward.copy()
+    reward[truncations] += gamma * final_values[truncations]
+    return reward
 
 if __name__ == "__main__":
     args = tyro.cli(Args)
@@ -252,7 +280,12 @@ if __name__ == "__main__":
                 # TRY NOT TO MODIFY: execute the game and log data.
                 next_obs, reward, terminations, truncations, infos = envs.step(action.cpu().numpy())
                 next_done = np.logical_or(terminations, truncations)
-                rewards[step] = torch.tensor(reward).to(device).view(-1)
+                train_reward = reward
+                if truncations.any():
+                    with torch.no_grad():
+                        final_values = agent.get_value(torch.Tensor(infos["final_obs"]).to(device))
+                    train_reward = bootstrap_truncated(reward, truncations, final_values.flatten().cpu().numpy(), args.gamma)
+                rewards[step] = torch.tensor(train_reward).to(device).view(-1)
                 next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(next_done).to(device)
 
                 # counting each episode that ended in this step, by how it ended
@@ -268,18 +301,8 @@ if __name__ == "__main__":
             # bootstrap value if not done
             with torch.no_grad():
                 next_value = agent.get_value(next_obs).reshape(1, -1)
-                advantages = torch.zeros_like(rewards).to(device)
-                lastgaelam = 0
-                for t in reversed(range(args.num_steps)):
-                    if t == args.num_steps - 1:
-                        nextnonterminal = 1.0 - next_done
-                        nextvalues = next_value
-                    else:
-                        nextnonterminal = 1.0 - dones[t + 1]
-                        nextvalues = values[t + 1]
-                    delta = rewards[t] + args.gamma * nextvalues * nextnonterminal - values[t]
-                    advantages[t] = lastgaelam = delta + args.gamma * args.gae_lambda * nextnonterminal * lastgaelam
-                returns = advantages + values
+                advantages, returns = compute_gae(rewards, values, dones, next_value,
+                                                  next_done, args.gamma, args.gae_lambda)
 
             # flatten the batch
             b_obs = obs.reshape((-1,) + envs.single_observation_space.shape)
