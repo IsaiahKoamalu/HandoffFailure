@@ -1,102 +1,302 @@
-lets ## Step 10: the truncation fix and its unit test
+## Step 11: export `policy.json` and check it against the engine
 
-### What CleanRL's GAE assumes
-In CleanRL, `dones[t]` means "`obs[t]` is the first frame of a new episode". GAE then uses `nextnonterminal = 1 - dones[t+1]` to decide whether step `t` may bootstrap from `values[t+1]`. Your host resets ships in the same step they finish, so after a truncation `values[t+1]` is a **different episode's** value. That gives three possibilities:
+Roadmap item: "check that numpy inference and the in-engine GDScript forward pass agree
+to about 1e-6 before believing any in-engine result."
 
-| | Chain cut (OR kept) | Value of `final_obs` added | Result |
-|---|---|---|---|
-| CleanRL as shipped | yes | no | a time-out is treated like a crash |
-| OR removed | no | no | bootstraps from the next episode, which is wrong |
-| **Correct** | **yes** | **yes** | |
+This step adds three new files and makes three edits to `ppo.py`. When it's done, every
+training run ends with a `policy.json` that `rl/neural_pilot.gd` can load, together with
+proof that the engine computes the same actions as PyTorch.
 
-So line 254 stays exactly as it is, and you add the missing value to the reward.
+### What was run before writing this
+In a scratch copy of the repo, `ppo.py --total-timesteps 20000 --max-steps 600` with
+everything below in place:
 
-### 10a. Move GAE into a function
-The test can't reach code that lives inside `if __name__ == "__main__":`. Between the `Agent` class and `__main__`, add:
+```
+iter 2/2  episodes 97  landed 0.0%  explained_var 0.858  SPS 3020
+policy saved to rl/runs/ppo__7__…/policy.json; engine agrees with PyTorch to 1.5e-07
+```
+
+- **The exported file** has layers `(64, 4)`, `(64, 64)`, `(6, 64)`, the normalizer
+  statistics, the observation names and `trained_steps: 16384`.
+- **Negative control:** with `obs_mean` shifted by 0.01 in a copy of the file, the
+  engine's actions changed by 0.0043, more than 4,000 times the tolerance. A wrong export
+  is caught.
+- **One real bug came up and is fixed in the code below.** CleanRL builds its layers
+  with sizes from `np.prod(...)`, so `in_features` is a numpy integer, which `json`
+  refuses to write.
+
+---
+
+### 11a. `python/export.py`
 
 ```python
-def compute_gae(rewards, values, dones, next_value, next_done, gamma, gae_lambda):
-    """CleanRL's GAE, moved out of the training loop so it can be unit tested."""
-    num_steps = rewards.shape[0]
-    advantages = torch.zeros_like(rewards)
-    lastgaelam = 0
-    for t in reversed(range(num_steps)):
-        # ... CleanRL's loop body, unchanged ...
-    return advantages, advantages + values
+"""Write a trained policy as the policy.json that rl/neural_pilot.gd loads.
+
+NeuralPilot runs the actor's mean in GDScript: inputs normalized with obs_mean and
+obs_std, tanh after every layer but the last, output clamped to [-1, 1]. The critic
+and the exploration noise are only needed for training and are not exported.
+"""
+
+import json
+
+import torch.nn as nn
+
+FORMAT = 1
+
+
+def export_policy(path, agent, normalizer, *, task, obs_names, repeat, trained_steps):
+    modules = list(agent.actor_mean)
+    linears = modules[0::2]
+    expected = [nn.Linear, nn.Tanh] * (len(linears) - 1) + [nn.Linear]
+    if [type(m) for m in modules] != expected:
+        raise ValueError("NeuralPilot runs Linear, Tanh, ..., Linear; the actor has a different shape")
+
+    state = normalizer.state()
+    policy = {
+        "format": FORMAT,
+        "task": task,
+        "obs_size": int(linears[0].in_features),
+        "act_size": int(linears[-1].out_features),
+        "activation": "tanh",
+        "repeat": repeat,
+        "trained_steps": trained_steps,
+        "layers": [
+            {"w": layer.weight.detach().cpu().tolist(), "b": layer.bias.detach().cpu().tolist()}
+            for layer in linears
+        ],
+        "obs_mean": state["obs_mean"],
+        "obs_std": state["obs_std"],
+        "obs_names": obs_names,
+        "normalizer_count": state["count"],
+    }
+    with open(path, "w") as f:
+        json.dump(policy, f)
 ```
 
-Move CleanRL's loop body in exactly as it is (the `if t == num_steps - 1:` through `advantages[t] = lastgaelam = ...` lines), with `args.gamma` and `args.gae_lambda` replaced by the two parameters and `args.num_steps` by `num_steps`. In the training loop, the block at around lines 269–282 becomes:
+- **Only `actor_mean` is exported.** In play the ship flies the mean action, so the
+  critic and `actor_logstd` (the exploration noise) have no use in the engine.
+- **It checks the network's shape before exporting.** `neural_pilot.gd` hard-codes "tanh
+  after every layer except the last". Changing the network (ReLU, an extra layer norm)
+  would otherwise load fine and compute something different. `modules[0::2]` takes every
+  other module, which are the `Linear` layers.
+- **The keys are exactly the ones `neural_pilot.gd` reads** (its header comment, lines
+  9–16).
+- **`int(...)` around the sizes** is the fix for the numpy-integer bug. It's simpler to
+  convert here than to change CleanRL's `Agent`.
+- **`layer.weight` is already `[out][in]`,** the layout `neural_pilot.gd` loops over. No
+  transpose is needed, and the engine check is what proves it.
+- **`.tolist()` writes float32 values exactly,** and the engine loads them back into a
+  `PackedFloat32Array` unchanged.
+- **`obs_names` and `normalizer_count` are extra.** `neural_pilot.gd` ignores keys it
+  doesn't read, and `docs/protocol.md` says the names must be saved alongside the weights
+  for E3.
+
+---
+
+### 11b. `rl/checks/policy_check.gd`
+
+The engine side of the comparison: a script Godot runs without loading any scene.
+
+```gdscript
+extends SceneTree
+
+## Runs observations through NeuralPilot.act and writes the actions back, so
+## python/verify_policy.py can compare the engine's forward pass with PyTorch's.
+##
+##     "$GODOT" --headless --path . --script res://rl/checks/policy_check.gd -- \
+##         <policy.json> <inputs.json> <outputs.json>
+##
+## The policy path comes from the caller, never from NeuralPilot's default, so the
+## check cannot quietly compare against whatever policy happens to be installed.
+
+
+func _initialize() -> void:
+	var args := OS.get_cmdline_user_args()
+	if args.size() != 3:
+		printerr("policy_check: expected <policy.json> <inputs.json> <outputs.json>")
+		quit(2)
+		return
+
+	var inputs = JSON.parse_string(FileAccess.get_file_as_string(args[1]))
+	if typeof(inputs) != TYPE_ARRAY or inputs.is_empty():
+		printerr("policy_check: %s is not a non-empty list of observations" % args[1])
+		quit(2)
+		return
+
+	var pilot := NeuralPilot.load_from(inputs[0].size(), args[0])
+	if pilot == null:
+		printerr("policy_check: NeuralPilot refused %s" % args[0])
+		quit(1)
+		return
+
+	var outputs := []
+	for row in inputs:
+		outputs.append(pilot.act(PackedFloat32Array(row)))
+	var file := FileAccess.open(args[2], FileAccess.WRITE)
+	file.store_string(JSON.stringify(outputs, "", false, true))
+	file.close()
+	quit(0)
+```
+
+- **`extends SceneTree` with `_initialize`** is how Godot runs a plain script with
+  `--script`. No world gets built, so it starts in about a second.
+- **`OS.get_cmdline_user_args()`** returns everything after the `--` in the command.
+- **The policy path is an argument and goes straight into `load_from`,** with no fallback
+  to `NeuralPilot.DEFAULT_PATH`. This is the trap from the roadmap: a path that reaches
+  only one side of a check once produced a 0.91 disagreement that was pure artefact.
+- **It calls `NeuralPilot.act`, the exact function the autopilot calls in play,** not a
+  copy of the forward pass.
+- **`JSON.stringify(outputs, "", false, true)`:** the last argument is `full_precision`.
+  Without it Godot rounds floats when writing JSON, and at 1e-6 that could cause a
+  failure by itself.
+- **Exit codes:** 2 means called wrong, 1 means the policy was refused, 0 means it worked.
+- **No reimport is needed,** since there's no `class_name`. Commit the `.uid` file Godot
+  creates for it.
+
+---
+
+### 11c. `python/verify_policy.py`
 
 ```python
-            with torch.no_grad():
-                next_value = agent.get_value(next_obs).reshape(1, -1)
-                advantages, returns = compute_gae(rewards, values, dones, next_value, next_done,
-                                                  args.gamma, args.gae_lambda)
+"""Check that rl/neural_pilot.gd computes the same actions as PyTorch.
+
+Runs the same observations through the trained agent here and through NeuralPilot
+in a headless Godot, both reading the one policy.json path given, and fails if any
+action differs by more than TOLERANCE. Until this passes, nothing measured in the
+engine can be trusted to be the policy that was trained.
+"""
+
+import json
+import os
+import subprocess
+import tempfile
+from pathlib import Path
+
+import numpy as np
+import torch
+
+from launch import ROOT
+
+TOLERANCE = 1e-6
+
+
+def engine_actions(policy_path, observations):
+    """Run observations through NeuralPilot.act in a headless Godot."""
+    godot = os.environ.get("GODOT")
+    if not godot:
+        raise RuntimeError("GODOT is not set; see 'Running the simulator' in README.md")
+    with tempfile.TemporaryDirectory() as tmp:
+        inputs = Path(tmp) / "inputs.json"
+        outputs = Path(tmp) / "outputs.json"
+        inputs.write_text(json.dumps(observations.tolist()))
+        result = subprocess.run(
+            [godot, "--headless", "--path", str(ROOT), "--script", "res://rl/checks/policy_check.gd",
+             "--", str(Path(policy_path).resolve()), str(inputs), str(outputs)],
+            capture_output=True, text=True,
+        )
+        if result.returncode != 0 or not outputs.exists():
+            raise RuntimeError(f"policy_check failed ({result.returncode}):\n{result.stdout}{result.stderr}")
+        return np.array(json.loads(outputs.read_text()), dtype=np.float32)
+
+
+def verify_policy(policy_path, agent, normalizer, samples=1000, seed=0):
+    """Return the largest difference between engine and PyTorch actions; raise if over TOLERANCE."""
+    rng = np.random.default_rng(seed)
+    # Spread observations to three standard deviations, so the clamp is exercised too.
+    raw = normalizer.mean + normalizer.std * rng.normal(scale=3.0, size=(samples, len(normalizer.mean)))
+    raw = raw.astype(np.float32)
+    with torch.no_grad():
+        mean_action = agent.actor_mean(torch.tensor(normalizer(raw)))
+    expected = mean_action.clamp(-1.0, 1.0).cpu().numpy()
+    actual = engine_actions(policy_path, raw)
+    worst = float(np.max(np.abs(actual - expected)))
+    if worst > TOLERANCE:
+        raise RuntimeError(f"engine and PyTorch disagree by {worst:.3g} (tolerance {TOLERANCE:g})")
+    return worst
 ```
 
-### 10b. The bootstrap, as a function next to it
+- **Files rather than the socket.** This is a one-off batch computation, so it writes
+  inputs to a file, runs Godot once and reads the outputs back. It doesn't touch the
+  bridge.
+- **`TemporaryDirectory`** cleans up both files when the block ends, even if Godot fails.
+- **`.resolve()` makes the path absolute,** because Godot runs with `--path` set to the
+  repo root and would read a relative path from somewhere else.
+- **On failure the error includes Godot's own output,** so a "NeuralPilot refused…"
+  message reaches you.
+- **The PyTorch side is the live agent, not something rebuilt from the JSON.** That
+  compares what was trained against what the engine loaded, which covers the export, the
+  weight layout, the normalizer statistics and the engine's arithmetic. A numpy
+  reimplementation reading the same JSON would share any export mistake and agree with it.
+- **Raw observations spread to 3 standard deviations,** so some go far enough out that
+  the ±10 input clamp and the ±1 action clamp both apply.
+- **The expected action is clamped to [−1, 1]** because `NeuralPilot.act` clamps its
+  output.
+- **`seed=0`** makes the check reproducible, and **it returns the worst difference** so
+  `ppo.py` can print it and the write-up can quote a number.
+
+---
+
+### 11d. Three edits to `python/ppo.py`
+
+**1. Imports**, under `from normalizer import ObsNormalizer`:
 ```python
-def bootstrap_truncated(reward, truncations, final_values, gamma):
-    """Add the discounted value of each truncated ship's last observation to its reward.
-
-    A time limit is not an ending: the ship had a future, worth what the critic says.
-    GAE still cuts at every episode end, so the value has to come in through the reward.
-    """
-    reward = reward.copy()
-    reward[truncations] += gamma * final_values[truncations]
-    return reward
+from export import export_policy
+from verify_policy import verify_policy
 ```
 
-### 10c. Call it in the rollout, right after `envs.step(...)`
+**2. Remove the `save_model` argument** from `Args`, both lines:
 ```python
-                next_done = np.logical_or(terminations, truncations)  # keep: GAE must not cross into the next episode
-                train_reward = reward
-                if truncations.any():
-                    with torch.no_grad():
-                        final_values = agent.get_value(torch.Tensor(infos["final_obs"]).to(device))
-                    train_reward = bootstrap_truncated(reward, truncations, final_values.flatten().cpu().numpy(), args.gamma)
-                rewards[step] = torch.tensor(train_reward).to(device).view(-1)
+    save_model: bool = False
+    """whether to save model into the `runs/{run_name}` folder"""
+```
+Every run now exports instead. The old path (`runs/{run_name}/...`) didn't match the
+run directory anyway.
+
+**3. Replace the `if args.save_model:` block** (the four lines before `envs.close()`)
+with:
+```python
+        policy_path = run_dir / "policy.json"
+        export_policy(policy_path, agent, normalizer, task=envs.task, obs_names=envs.obs_names,
+                      repeat=args.repeat, trained_steps=global_step)
+        worst = verify_policy(policy_path, agent, normalizer)
+        print(f"policy saved to {policy_path}; engine agrees with PyTorch to {worst:.2g}")
+```
+- **Every run now ends with a verified `policy.json`.** If the engine disagrees, the run
+  raises an error instead of handing over a policy that would fly differently in the game.
+- **It runs inside the `try`,** so the host is still killed by the `finally` if the check
+  raises.
+- **`trained_steps=global_step`** records the steps actually taken, which can be less
+  than `--total-timesteps` because of rounding to whole iterations (16,384 of 20,000).
+
+---
+
+### 11e. Run it
+
+```bash
+"$GODOT" --headless --path . --import       # registers the new script's uid
+uv run python python/ppo.py --total-timesteps 20000 --max-steps 600
 ```
 
-**Watch the naming.** Use a new name such as `train_reward`, and don't reassign `reward`. Your step-9 logging does `running_return += reward`, and if `reward` included the bootstrap, every time-out would report a made-up return. The logging should keep seeing the real reward.
+The last line should read `engine agrees with PyTorch to …`, with a value well under
+1e-6.
 
-Only truncated ships are touched. Terminated ships get no bootstrap, which is correct, because a crash has no future. The host guarantees no ship is both terminated and truncated.
+### Once it passes
+- Add to the changes list in `ppo.py`'s header:
+  ```
+      - Every run exports policy.json in rl/neural_pilot.gd's format and checks
+        that the engine computes the same actions as PyTorch (verify_policy.py).
+  ```
+- Tick the normalizer item in `ROADMAP.md`, since it's now saved next to the weights.
+- Commit `python/export.py`, `python/verify_policy.py`, `rl/checks/policy_check.gd` and
+  its `.uid`, and `python/ppo.py`.
 
-**This will need revisiting once you add the normalizer:** `final_obs` must be normalized exactly like `next_obs` before it goes to `get_value`.
+### Not covered by this step
+Installing a chosen policy where the game looks for it (`rl/runs/landing/policy.json`,
+`NeuralPilot.DEFAULT_PATH`). Do that deliberately once there's a policy worth installing,
+rather than having every run overwrite it. The roadmap's own note: "a policy chosen
+deliberately beats a policy left wherever the last training run put it."
 
-### 10d. The unit test, `python/test_truncation.py`
-**Worked example:** one ship, 4 decisions, γ = 0.9, λ = 0.5. The episode is truncated at step 1, and step 2 starts a new episode.
-
-| t | value V | raw reward | notes |
-|---|---|---|---|
-| 0 | 2.0 | 1.0 | |
-| 1 | 3.0 | 1.0 | truncated; V(final_obs) = 4.0, so the reward becomes 1 + 0.9 × 4 = **4.6** |
-| 2 | 0.5 | 0.0 | new episode, so `dones[2] = 1` |
-| 3 | 1.0 | 2.0 | `next_value` = 1.5, `next_done` = 0 |
-
-The arithmetic, working backwards:
-- **t=3:** δ = 2 + 0.9 × 1.5 − 1 = 2.35, so A₃ = **2.35**.
-- **t=2:** δ = 0 + 0.9 × 1.0 − 0.5 = 0.4, so A₂ = 0.4 + 0.45 × 2.35 = **1.4575**.
-- **t=1:** the chain is cut, so δ = 4.6 − 3 = 1.6 and A₁ = **1.6**.
-- **t=0:** δ = 1 + 0.9 × 3 − 2 = 1.7, so A₀ = 1.7 + 0.45 × 1.6 = **2.42**.
-
-The test should assert:
-1. **Correct:** advantages ≈ `[2.42, 1.6, 1.4575, 2.35]`, using the raw rewards passed through `bootstrap_truncated` and `dones = [0, 0, 1, 0]`.
-2. **Without the bootstrap (CleanRL as shipped):** `[0.8, -2.0, 1.4575, 2.35]`. Assert that this does **not** match (1). That proves the test catches the bug.
-3. **`bootstrap_truncated` touches only truncated ships.** With rewards `[1, 1, 1]`, terminations `[F, T, F]`, truncations `[F, F, T]`, final values `[5, 6, 7]` and γ = 0.9, the result should be `[1, 1, 7.3]`.
-
-Build the inputs as torch tensors shaped `(num_steps, num_envs)`, here `(4, 1)`. `next_value` has shape `(1, 1)` and `next_done` has shape `(1,)`. Compare with `torch.allclose(..., atol=1e-6)`. Import with `from ppo import compute_gae, bootstrap_truncated`. That's safe because the training code sits under `__main__`. Run it with `uv run python python/test_truncation.py` and end the file with a `print("PASS")`.
-
-### What I ran
-I prototyped `compute_gae` (CleanRL's loop moved into a function) and `bootstrap_truncated` in my scratchpad and ran all three variants:
-```
-correct   (OR kept + bootstrap): [2.42, 1.6, 1.4575, 2.35]
-CleanRL   (OR, no bootstrap):     [0.8, -2.0, 1.4575, 2.35]
-OR removed, no bootstrap:         [1.297644, -0.894125, 1.4575, 2.35]
-```
-The first two match the hand-worked numbers above. The third is the "just stop OR-ing them" mistake. It's wrong in a different way, so you could assert it fails too.
-
-Once it passes:
-- Rerun `uv run python python/ppo.py --total-timesteps 20000 --max-steps 600`. It should behave as before, with time-outs now bootstrapped.
-- Add "truncated episodes bootstrap from `final_obs`" to the header's changes list.
-- Tick the truncation unit test in `ROADMAP.md`.
+### After this
+The trainer side of week 1 is complete apart from the reward-scale unit test. What remains
+is the real landing task: its observation, reward, spawn distribution and termination.
+Its reward is zero everywhere right now, which is why `landed 0.0%` can't move yet.
