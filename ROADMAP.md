@@ -10,7 +10,7 @@ The week headings match the timeline table in `proposal/main.typ`; if a date sli
 it slips there too.
 
 ---
-
+https://github.com/uhh-cs440-2026f/final-project-IsaiahKoamalu.git
 ## Ground rules
 
 **Fixed apparatus.** Everything under `sim/`: the ship, the planets, the terrain, the

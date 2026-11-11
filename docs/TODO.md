@@ -1,4 +1,4 @@
-## Step 10: the truncation fix and its unit test
+lets ## Step 10: the truncation fix and its unit test
 
 ### What CleanRL's GAE assumes
 In CleanRL, `dones[t]` means "`obs[t]` is the first frame of a new episode". GAE then uses `nextnonterminal = 1 - dones[t+1]` to decide whether step `t` may bootstrap from `values[t+1]`. Your host resets ships in the same step they finish, so after a truncation `values[t+1]` is a **different episode's** value. That gives three possibilities:

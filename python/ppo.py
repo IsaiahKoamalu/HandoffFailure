@@ -13,6 +13,7 @@ Changes made for this project (everything else is CleanRL's):
     - Each run gets its own directory under rl/runs/, with a run.json recording
       the command, every argument, the commit and what the host built.
     - The wandb, video, evaluation and Hugging Face code is removed.
+    - Truncated episodes bootstrap from final_obs; GAE moved into cpmpute_gae()
 
 ----------------------------------------------------------------------------
 MIT License
