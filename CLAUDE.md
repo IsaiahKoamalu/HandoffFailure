@@ -29,7 +29,7 @@ Do not trust a summary in this file for status. At the start of a session, check
   on the instructor's recommendation. It is copied into `python/` with attribution, not
   installed. The changes that are this project's work are listed in `README.md`: one
   Gymnasium `VectorEnv` over the bridge, truncation bootstrapped from `final_obs`
-  (CleanRL ORs terminations and truncations), a normaliser matching
+  (CleanRL ORs terminations and truncations), a normalizer matching
   `rl/neural_pilot.gd`, and `policy.json` export. Do not reintroduce CleanRL's Gymnasium
   wrappers. The header of `python/ppo.py` carries CleanRL's MIT notice and the list of
   changes made so far; keep that list matching the diff from `4358005`, the unmodified

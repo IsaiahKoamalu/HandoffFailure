@@ -4,9 +4,14 @@ One ship with four decisions, gamma 0.9, lambda 0.5. The episode is truncated at
 with V(final_obs) = 4.0, and step 2 starts a new episode.
 """
 
+import sys
 import numpy as np
 import torch
 
+from pathlib import Path
+
+parent_dir = str(Path(__file__).resolve().parent.parent)
+sys.path.insert(0, parent_dir)
 from ppo import bootstrap_truncated, compute_gae
 
 GAMMA = 0.9

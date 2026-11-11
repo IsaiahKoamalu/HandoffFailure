@@ -8,12 +8,15 @@ Changes made for this project (everything else is CleanRL's):
     - The environment is GodotVectorEnv, one process simulating every ship,
       launched and connected through launch.py, instead of SyncVectorEnv.
     - CleanRL's Gymnasium wrappers are removed, observation and reward
-      normalisation among them.
+      normalization among them.
     - Episode logging counts outcomes as the host reports them.
     - Each run gets its own directory under rl/runs/, with a run.json recording
       the command, every argument, the commit and what the host built.
     - The wandb, video, evaluation and Hugging Face code is removed.
     - Truncated episodes bootstrap from final_obs; GAE moved into cpmpute_gae()
+    - Observations are normalized by normalizer.ObsNormalizer, which matches
+      rl/neural_pilot.gd exactly, instead of Gymnasium's wrapper.
+
 
 ----------------------------------------------------------------------------
 MIT License
@@ -59,6 +62,8 @@ from torch.distributions.normal import Normal
 from torch.utils.tensorboard import SummaryWriter
 
 from launch import connect, launch_host, ROOT
+
+from normalizer import ObsNormalizer
 
 
 
@@ -235,6 +240,7 @@ if __name__ == "__main__":
         assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
 
         agent = Agent(envs).to(device)
+        normalizer = ObsNormalizer(envs.single_observation_space.shape[0])
         optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
 
         # ALGO Logic: Storage setup
@@ -249,7 +255,8 @@ if __name__ == "__main__":
         global_step = 0
         start_time = time.time()
         next_obs, _ = envs.reset(seed=args.seed)
-        next_obs = torch.Tensor(next_obs).to(device)
+        normalizer.update(next_obs)
+        next_obs = torch.Tensor(normalizer(next_obs)).to(device)
         next_done = torch.zeros(args.num_envs).to(device)
 
         running_return = np.zeros(args.num_envs)
@@ -280,14 +287,16 @@ if __name__ == "__main__":
 
                 # TRY NOT TO MODIFY: execute the game and log data.
                 next_obs, reward, terminations, truncations, infos = envs.step(action.cpu().numpy())
+                normalizer.update(next_obs)
                 next_done = np.logical_or(terminations, truncations)
                 train_reward = reward
                 if truncations.any():
                     with torch.no_grad():
-                        final_values = agent.get_value(torch.Tensor(infos["final_obs"]).to(device))
+                        final_values = agent.get_value(torch.Tensor(normalizer(infos["final_obs"])).to(device))
                     train_reward = bootstrap_truncated(reward, truncations, final_values.flatten().cpu().numpy(), args.gamma)
                 rewards[step] = torch.tensor(train_reward).to(device).view(-1)
-                next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(next_done).to(device)
+                next_obs = torch.Tensor(normalizer(next_obs)).to(device)
+                next_done = torch.Tensor(next_done).to(device)
 
                 # counting each episode that ended in this step, by how it ended
                 running_return += reward

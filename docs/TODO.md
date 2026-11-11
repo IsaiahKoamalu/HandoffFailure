@@ -62,7 +62,7 @@ def bootstrap_truncated(reward, truncations, final_values, gamma):
 
 Only truncated ships are touched. Terminated ships get no bootstrap, which is correct, because a crash has no future. The host guarantees no ship is both terminated and truncated.
 
-**This will need revisiting once you add the normaliser:** `final_obs` must be normalised exactly like `next_obs` before it goes to `get_value`.
+**This will need revisiting once you add the normalizer:** `final_obs` must be normalized exactly like `next_obs` before it goes to `get_value`.
 
 ### 10d. The unit test, `python/test_truncation.py`
 **Worked example:** one ship, 4 decisions, γ = 0.9, λ = 0.5. The episode is truncated at step 1, and step 2 starts a new episode.

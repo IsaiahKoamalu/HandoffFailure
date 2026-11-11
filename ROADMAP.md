@@ -19,7 +19,7 @@ simulator change, that is a signal the task definition is wrong, not the sim.
 
 **Adapted, not written.** PPO is CleanRL's `ppo_continuous_action.py`, on the
 instructor's recommendation, copied into `python/` with attribution. The changes to it
-— vector environment, truncation bootstrap, normaliser, policy export — are this
+— vector environment, truncation bootstrap, normalizer, policy export — are this
 project's work; the rest of the file is not, and is not claimed.
 
 **Written for this project.** The environment wrapper and bridge client, both task
@@ -47,7 +47,7 @@ week 7, so a week with no entry is a week that cannot be written up.
 Only three things can sink this:
 
 1. **PPO that is subtly wrong.** Using CleanRL narrows this to the changes made to it —
-   the truncation bootstrap and the normaliser most of all. Mitigated by the unit tests
+   the truncation bootstrap and the normalizer most of all. Mitigated by the unit tests
    and by reproducing a known answer in week 1 (landing at ≈92%) before trusting the
    result on anything new.
 2. **The mission runner.** It is the only genuinely new component. It is scheduled in
@@ -72,7 +72,7 @@ Goal: a trainer I can trust, demonstrated against an answer I already know.
 - [ ] PPO: copy CleanRL's `ppo_continuous_action.py` into `python/` with attribution,
       replace its environment setup with the wrapper, and replace its episode logging
       with outcome counts.
-- [ ] Observation normaliser that matches `rl/neural_pilot.gd` (std ≤ 1e-3 counts as
+- [ ] Observation normalizer that matches `rl/neural_pilot.gd` (std ≤ 1e-3 counts as
       constant, clamp to ±10), frozen at evaluation, with mean and std saved next to the
       weights in `policy.json`. **That saved record is the measurement instrument for
       E3, so build it now, not in week 3.**
@@ -94,12 +94,12 @@ Goal: a trainer I can trust, demonstrated against an answer I already know.
 Reference: 92.5% landed over 400 episodes at seed 7 with `--repeat 6`.
 
 **Traps.** Run `--headless --import` after adding any script with a `class_name`, or the
-headless trainer parses nothing, never replies, and simply hangs. Freeze the normaliser
-at evaluation time — normaliser drift alone moves the score, which was confirmed by
+headless trainer parses nothing, never replies, and simply hangs. Freeze the normalizer
+at evaluation time — normalizer drift alone moves the score, which was confirmed by
 reproducing it with the learning rate set to zero. Do not keep CleanRL's Gymnasium
-wrappers: its observation normaliser divides by `sqrt(var + 1e-8)`, which turns a
+wrappers: its observation normalizer divides by `sqrt(var + 1e-8)`, which turns a
 constant channel into huge values where `neural_pilot.gd` reads it as unit scale, and its
-reward normaliser changes the reward scale the unit test asserts on. CleanRL pins
+reward normalizer changes the reward scale the unit test asserts on. CleanRL pins
 `gymnasium==0.29.1`; this project uses 1.x, which only touches the environment setup and
 logging that are being replaced anyway.
 

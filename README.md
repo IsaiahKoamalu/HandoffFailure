@@ -37,7 +37,7 @@ which is this project's work:
   Godot process, instead of `SyncVectorEnv` over single environments.
 - Truncated episodes bootstrap from their final observation. CleanRL treats a time-limit
   cutoff as terminal, which is wrong for episodes this long.
-- The observation normaliser is replaced by one that matches `rl/neural_pilot.gd`
+- The observation normalizer is replaced by one that matches `rl/neural_pilot.gd`
   exactly, is frozen at evaluation, and is saved beside the weights. That saved record
   is what E3 measures.
 - The trained policy is exported as the `policy.json` that `rl/neural_pilot.gd` loads.
