@@ -16,6 +16,8 @@ Changes made for this project (everything else is CleanRL's):
     - Truncated episodes bootstrap from final_obs; GAE moved into cpmpute_gae()
     - Observations are normalized by normalizer.ObsNormalizer, which matches
       rl/neural_pilot.gd exactly, instead of Gymnasium's wrapper.
+    - Every run exports policy.json in rl/neural_pilot.gd's format and checks
+      that the engine computes the same actions as PyTorch (verify_policy.py)
 
 
 ----------------------------------------------------------------------------
@@ -64,6 +66,8 @@ from torch.utils.tensorboard import SummaryWriter
 from launch import connect, launch_host, ROOT
 
 from normalizer import ObsNormalizer
+from export import export_policy
+from verify_policy import verify_policy
 
 
 
@@ -77,8 +81,6 @@ class Args:
     """if toggled, `torch.backends.cudnn.deterministic=False`"""
     cuda: bool = True
     """if toggled, cuda will be enabled by default"""
-    save_model: bool = False
-    """whether to save model into the `runs/{run_name}` folder"""
 
     # Algorithm specific arguments
     total_timesteps: int = 1000000
@@ -405,10 +407,11 @@ if __name__ == "__main__":
             print(f"iter {iteration}/{args.num_iterations}  episodes {episodes}  {success_name} {rate}  "
                   f"explained_var {explained_var:.3f}  SPS {int(global_step / (time.time() - start_time))}")
 
-        if args.save_model:
-            model_path = f"runs/{run_name}/{args.exp_name}.cleanrl_model"
-            torch.save(agent.state_dict(), model_path)
-            print(f"model saved to {model_path}")
+        policy_path = run_dir / "policy.json"
+        export_policy(policy_path, agent, normalizer, task=envs.task, obs_names=envs.obs_names,
+                      repeat=args.repeat, trained_steps=global_step)
+        worst = verify_policy(policy_path, agent, normalizer)
+        print(f"policy saved to {policy_path}; engine agrees with PyTorch to {worst:.2g}")
         envs.close()
         host.wait(timeout=10)
     finally:

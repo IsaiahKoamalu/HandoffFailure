@@ -1,3 +1,5 @@
+extends SceneTree
+
 ## Runs observations through NeuralPilot.act and writes the actions back,
 ## so python/verify_policy.py can compare the engines forward pass with PyTorch's.
 ##
@@ -8,7 +10,7 @@
 ## check cannot quietly compare against whatever policy happens to be installed.
 
 func _initialize() -> void:
-    var args := OS.get_cmdline_args()
+    var args := OS.get_cmdline_user_args()
     if args.size() != 3:
         printerr("Policy check: expected <policy.json> <inputs.json> <outputs.json>")
         quit(2)
@@ -16,7 +18,7 @@ func _initialize() -> void:
     
     var inputs = JSON.parse_string(FileAccess.get_file_as_string(args[1]))
     if typeof(inputs) != TYPE_ARRAY or inputs.is_empty():
-        printerr("policy_check: %s is a non-empty list of observations" % args[1])
+        printerr("policy_check: %s is not a non-empty list of observations" % args[1])
         quit(2)
         return
     

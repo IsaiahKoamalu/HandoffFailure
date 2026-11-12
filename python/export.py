@@ -1,6 +1,6 @@
 """Writing a trained policy as the policy.json that rl/neural_pilot.gd loads.
 
-NeuralPilot runs the actors mean in GDScrpt.
+NeuralPilot runs the actor's mean in GDScript.
 - Inputs are normalized with obs_mean, obs_std, tanh after every layer but the last.
 - output gets clamped to [-1, 1]
 - the critic and the exploration noise are only needed for training and are not exported.
@@ -8,7 +8,6 @@ NeuralPilot runs the actors mean in GDScrpt.
 
 import json
 import torch.nn as nn
-import os
 
 FORMAT = 1
 
@@ -16,9 +15,8 @@ def export_policy(path, agent, normalizer, *, task, obs_names, repeat, trained_s
     modules = list(agent.actor_mean)
     linears = modules[0::2]
     expected = [nn.Linear, nn.Tanh] * (len(linears) - 1) + [nn.Linear]
-    for m in modules:
-        if type(m) != expected:
-            raise ValueError("NeuralPilot runs Linear, Tanh, ..., Linear; the actor has a different shape")
+    if [type(m) for m in modules] != expected:
+        raise ValueError("NeuralPilot runs Linear, Tanh, ..., Linear; the actor has a different shape")
 
     state = normalizer.state()
     policy = {
